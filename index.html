@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phòng Thi Thử — Học & Thi THPT</title>
+  <meta name="description" content="Web thi thử THPT: làm đề, chấm điểm theo quy chế 2025, xếp hạng, bài giảng video và tài liệu học tập." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,400;7..72,600;7..72,700;7..72,800&family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script>document.documentElement.dataset.theme = localStorage.getItem("ptt_theme") || "light";</script>
+  <!-- MathJax: render công thức toán (phân số, căn, vector...) viết trong đề bằng cú pháp LaTeX \( ... \) -->
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [["\\(", "\\)"]],
+        displayMath: [["\\[", "\\]"]]
+      },
+      options: {
+        skipHtmlTags: ["script", "noscript", "style", "textarea", "pre", "code"]
+      }
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" id="MathJax-script" defer></script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%2316267D'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Georgia'>T</text></svg>" />
+</head>
+<body>
+  <!-- ======= MÀN HÌNH ĐĂNG NHẬP ======= -->
+  <div id="auth-screen" class="auth-wrap hidden">
+    <div class="auth-card">
+      <div class="auth-head">
+        <p class="eyebrow">KỲ THI THỬ TỐT NGHIỆP THPT</p>
+        <h1 class="auth-title">Phòng thi thử</h1>
+        <div class="red-rule"></div>
+        <p class="auth-sub">Học bài giảng · Làm đề thi · Xem xếp hạng</p>
+      </div>
+
+      <div class="field">
+        <label>Tên đăng nhập hoặc Email</label>
+        <input id="auth-username" type="text" placeholder="vd: nguyenvana hoặc email" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label>Mật khẩu</label>
+        <input id="auth-password" type="password" placeholder="••••••••" autocomplete="current-password" />
+      </div>
+
+      <p id="auth-success" class="success-box hidden"></p>
+      <p id="auth-error" class="error-box hidden"></p>
+      <button id="auth-resend" class="btn btn-outline btn-sm btn-block hidden" style="margin-bottom:12px">📧 Gửi lại email xác minh</button>
+      <button id="auth-submit" class="btn btn-primary btn-block">Vào phòng thi</button>
+      <p class="auth-hint">Chưa có tài khoản? Liên hệ quản trị viên để được cấp tài khoản.<br/>Tài khoản quản trị mặc định: <code>admin / admin123</code></p>
+    </div>
+  </div>
+
+  <!-- ======= KHUNG ỨNG DỤNG ======= -->
+  <div id="app-shell" class="hidden">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand" id="brand-home">
+          <div class="brand-mark">T</div>
+          <div>
+            <div class="brand-name">PHÒNG THI THỬ</div>
+            <div class="brand-sub">Học & thi theo chuẩn THPT 2025 · <span id="db-badge"></span></div>
+          </div>
+        </div>
+        <nav class="nav" id="main-nav">
+          <button class="nav-btn" data-view="exams">Đề thi</button>
+          <button class="nav-btn" data-view="lessons">Bài giảng</button>
+          <button class="nav-btn" data-view="rank">Xếp hạng</button>
+          <button class="nav-btn" data-view="qa">Hỏi bài <span id="qa-badge" class="nav-badge hidden">0</span></button>
+          <button class="nav-btn admin-only hidden" data-view="upload">Tải lên</button>
+          <button class="nav-btn admin-only hidden" data-view="admin">Quản trị</button>
+        </nav>
+        <div class="user-box">
+          <button id="notif-btn" class="notif-btn" title="Thông báo" aria-label="Thông báo">🔔<span id="notif-badge" class="notif-badge hidden"></span></button>
+          <span id="user-chip" class="user-chip"></span>
+          <button id="changepw-btn" class="btn btn-ghost btn-sm">🔑 Mật khẩu</button>
+          <button id="logout-btn" class="btn btn-ghost btn-sm">Đăng xuất</button>
+        </div>
+      </div>
+      <div id="notif-panel" class="notif-panel hidden"></div>
+    </header>
+
+    <main id="main" class="main"></main>
+
+    <footer class="footer">
+      <span>Phòng Thi Thử · Chấm điểm theo quy chế thi tốt nghiệp THPT 2025</span>
+    </footer>
+  </div>
+
+  <button id="theme-btn" class="theme-btn" title="Đổi giao diện sáng / tối" aria-label="Đổi giao diện sáng tối">🌙</button>
+  <div id="toast" class="toast hidden"></div>
+  <div id="modal-root"></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/exam-engine.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
