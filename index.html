@@ -69,12 +69,16 @@
           <button class="nav-btn" data-view="lessons">Bài giảng</button>
           <button class="nav-btn" data-view="rank">Xếp hạng</button>
           <button class="nav-btn" data-view="qa">Hỏi bài <span id="qa-badge" class="nav-badge hidden">0</span></button>
+          <button class="nav-btn" data-view="profile">Hồ sơ</button>
           <button class="nav-btn admin-only hidden" data-view="upload">Tải lên</button>
           <button class="nav-btn admin-only hidden" data-view="admin">Quản trị</button>
         </nav>
         <div class="user-box">
           <button id="notif-btn" class="notif-btn" title="Thông báo" aria-label="Thông báo">🔔<span id="notif-badge" class="notif-badge hidden"></span></button>
-          <span id="user-chip" class="user-chip"></span>
+          <button id="profile-btn" class="user-profile-btn" title="Hồ sơ của tôi">
+            <img id="user-avatar-topbar" class="user-avatar-mini hidden" alt="" />
+            <span id="user-chip" class="user-chip"></span>
+          </button>
           <button id="changepw-btn" class="btn btn-ghost btn-sm">🔑 Mật khẩu</button>
           <button id="logout-btn" class="btn btn-ghost btn-sm">Đăng xuất</button>
         </div>
