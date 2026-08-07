@@ -369,6 +369,7 @@ function login(u, restore) {
   $("#auth-screen").classList.add("hidden");
   $("#app-shell").classList.remove("hidden");
   $("#user-chip").innerHTML = esc(u.name) + (u.role === "admin" ? '<span class="badge-admin">ADMIN</span>' : u.role === "solver" ? '<span class="badge-solver">GIẢI BÀI</span>' : "");
+  updateTopbarAvatar();
   $$(".admin-only").forEach((el) => el.classList.toggle("hidden", u.role !== "admin"));
   if (!localStorage.getItem(seenKey())) markSeen(); // lần đầu đăng nhập trên máy: không dồn thông báo cũ
   updateNotifBadge();
@@ -431,6 +432,7 @@ function forceLogout(msg) {
 function setupNav() {
   $$("#main-nav .nav-btn").forEach((b) => b.addEventListener("click", () => go(b.dataset.view)));
   $("#brand-home").addEventListener("click", () => go("exams"));
+  $("#profile-btn").addEventListener("click", () => go("profile"));
   $("#changepw-btn").addEventListener("click", () => go("changepw"));
   $("#logout-btn").addEventListener("click", () => {
     if (VIEW === "taking") {
@@ -468,6 +470,7 @@ function go(view, payload) {
   else if (view === "result") renderResult(main);
   else if (view === "qa") renderQA(main);
   else if (view === "qadetail") renderQADetail(main, payload);
+  else if (view === "profile") renderProfile(main);
 }
 
 /* =====================================================
@@ -1283,8 +1286,11 @@ async function renderRankAsync(main, examId) {
         ${rows.map((r, i) => `
           <div class="rank-row ${r.username === CURRENT_USER.username ? "me" : ""} ${i === 0 ? "top1" : ""}">
             <span class="rank-pos">${medal(i)}</span>
-            <span class="rank-name">${esc(r.name)}${r.username === CURRENT_USER.username ? ' <span style="font-size:11px">(bạn)</span>' : ""}
-              ${examId === "all" ? `<span class="rank-exam">${esc(r.examTitle)}</span>` : ""}
+            <span class="rank-name">
+              ${avatarHtml(r.username, r.name, 28)}
+              <span class="rank-name-text">${esc(r.name)}${r.username === CURRENT_USER.username ? ' <span style="font-size:11px">(bạn)</span>' : ""}
+                ${examId === "all" ? `<span class="rank-exam">${esc(r.examTitle)}</span>` : ""}
+              </span>
             </span>
             <span class="rank-score">${r.score10.toFixed(2)}</span>
             <span class="rank-time">${Math.floor(r.timeUsed / 60)}:${String(r.timeUsed % 60).padStart(2, "0")}</span>
@@ -1944,13 +1950,31 @@ function commentAvatarColor(name) {
   return palette[h];
 }
 
+/* Trả về HTML avatar: ảnh thật nếu tài khoản đã tải ảnh đại diện, ngược lại là vòng tròn chữ cái đầu tên */
+function avatarHtml(username, name, size) {
+  size = size || 32;
+  const u = USERS.find((x) => x.username === username);
+  if (u && u.avatar) {
+    return `<img src="${u.avatar}" class="avatar-img" style="width:${size}px;height:${size}px" alt="" />`;
+  }
+  const initial = esc((name || username || "?").trim()[0] || "?").toUpperCase();
+  return `<div class="comment-avatar" style="background:${commentAvatarColor(name || username)};width:${size}px;height:${size}px;font-size:${Math.round(size * 0.42)}px">${initial}</div>`;
+}
+
+function updateTopbarAvatar() {
+  const img = $("#user-avatar-topbar");
+  if (!img || !CURRENT_USER) return;
+  if (CURRENT_USER.avatar) { img.src = CURRENT_USER.avatar; img.classList.remove("hidden"); }
+  else { img.classList.add("hidden"); }
+}
+
 function renderCommentsList(box, list, lessonId) {
   const tops = list.filter((c) => !c.parent_id).sort((a, b) => (+a.created_at) - (+b.created_at));
   const repliesOf = (id) => list.filter((c) => c.parent_id === id).sort((a, b) => (+a.created_at) - (+b.created_at));
 
   const commentHtml = (c, isReply) => `
     <div class="comment-item ${isReply ? "is-reply" : ""}" data-cid="${c.id}">
-      <div class="comment-avatar" style="background:${commentAvatarColor(c.name || c.username)}">${esc((c.name || c.username || "?").trim()[0] || "?").toUpperCase()}</div>
+      ${avatarHtml(c.username, c.name || c.username, 32)}
       <div class="comment-body">
         <div class="comment-head">
           <span class="comment-name">${esc(c.name || c.username)}</span>
@@ -2502,8 +2526,9 @@ async function renderAdminAsync(main, tab) {
   $$("[data-atab]", main).forEach((b) => b.addEventListener("click", () => renderAdmin(main, b.dataset.atab)));
 
   const list = $("#admin-list");
-  const row = (t, s, btnHtml) => `
+  const row = (t, s, btnHtml, avatar) => `
     <div class="admin-row">
+      ${avatar || ""}
       <div class="info"><div class="t">${t}</div><div class="s">${s}</div></div>
       ${btnHtml || ""}
     </div>`;
@@ -2572,7 +2597,8 @@ async function renderAdminAsync(main, tab) {
     $("#users-list").innerHTML = USERS.map((u) => row(
       `${esc(u.name)} <span style="font-family:var(--font-mono);font-weight:400;color:var(--pencil)">(${esc(u.username)})</span>${u.role === "admin" ? '<span class="badge-admin">ADMIN</span>' : u.role === "solver" ? '<span class="badge-solver">GIẢI BÀI</span>' : ""}${u.restricted ? '<span class="badge-restricted">🔒 GIỚI HẠN</span>' : ""}`,
       `${u.email ? u.email + " · " : ""}${RESULTS.filter((r) => r.username === u.username).length} lượt thi`,
-      u.role !== "admin" ? `<span style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end"><button class="btn btn-outline btn-sm" data-change-role="${esc(u.username)}">🎓 Đổi vai trò</button><button class="btn btn-outline btn-sm" data-manage-access="${esc(u.username)}">🔒 Giới hạn</button><button class="btn btn-danger btn-sm" data-del-user="${esc(u.username)}">Xoá</button></span>` : ""
+      u.role !== "admin" ? `<span style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end"><button class="btn btn-outline btn-sm" data-change-role="${esc(u.username)}">🎓 Đổi vai trò</button><button class="btn btn-outline btn-sm" data-manage-access="${esc(u.username)}">🔒 Giới hạn</button><button class="btn btn-danger btn-sm" data-del-user="${esc(u.username)}">Xoá</button></span>` : "",
+      avatarHtml(u.username, u.name, 34)
     )).join("");
     $$("[data-change-role]").forEach((b) => b.addEventListener("click", () => openChangeRoleModal(b.dataset.changeRole, main)));
     $$("[data-manage-access]").forEach((b) => b.addEventListener("click", () => go("studentaccess", b.dataset.manageAccess)));
@@ -2767,6 +2793,55 @@ async function renderAdminAsync(main, tab) {
 ===================================================== */
 function canSolve(u) { return !!u && (u.role === "solver" || u.role === "admin"); }
 
+function renderProfile(main) {
+  const u = CURRENT_USER;
+  const roleLabel = u.role === "admin" ? "Quản trị viên" : u.role === "solver" ? "Người giải bài" : "Học sinh";
+  main.innerHTML = `
+    <div class="page-head"><h2 class="page-title">Hồ sơ của tôi</h2></div>
+    <div class="qa-detail-card" style="max-width:460px">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:18px">
+        <div style="position:relative">
+          ${avatarHtml(u.username, u.name, 96)}
+        </div>
+        <label class="btn btn-outline btn-sm">📷 Đổi ảnh đại diện<input type="file" accept="image/*" id="pf-avatar-file" class="hidden" /></label>
+        <p id="pf-avatar-err" class="error-box hidden" style="text-align:center"></p>
+      </div>
+      <div class="field"><label>Họ tên</label><p style="font-weight:700;color:var(--ink)">${esc(u.name)}</p></div>
+      <div class="field"><label>Tên đăng nhập</label><p style="font-family:var(--font-mono)">${esc(u.username)}</p></div>
+      <div class="field"><label>Vai trò</label><p><span class="chip chip-pen">${roleLabel}</span></p></div>
+      <div class="modal-actions" style="justify-content:flex-start">
+        <button class="btn btn-outline btn-sm" id="pf-changepw">Đổi mật khẩu</button>
+      </div>
+    </div>
+  `;
+  $("#pf-changepw").addEventListener("click", () => go("changepw"));
+  $("#pf-avatar-file").addEventListener("change", (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const errEl = $("#pf-avatar-err");
+    errEl.classList.add("hidden");
+    compressImageFile(f, async (dataUrl) => {
+      if (!dataUrl) { errEl.textContent = "Không đọc được ảnh này."; errEl.classList.remove("hidden"); return; }
+      const updated = { ...u, avatar: dataUrl };
+      try {
+        await DBX.remove("users", "username", u.username);
+        await DBX.insert("users", updated);
+        const idx = USERS.findIndex((x) => x.username === u.username);
+        if (idx > -1) USERS[idx] = updated;
+        CURRENT_USER = updated;
+        updateTopbarAvatar();
+        toast("Đã cập nhật ảnh đại diện");
+        renderProfile(main);
+      } catch (err) {
+        errEl.textContent = "Không lưu được: " + err.message + " — kiểm tra đã thêm cột avatar cho bảng users chưa";
+        errEl.classList.remove("hidden");
+      }
+    }, 300);
+  });
+}
+
+
+
 function openChangeRoleModal(username, main) {
   const u = USERS.find((x) => x.username === username);
   if (!u) return;
@@ -2830,7 +2905,8 @@ async function renderQAAsync(main) {
   if (VIEW !== "qa") return;
 
   const solver = canSolve(CURRENT_USER);
-  let items = [...QA_QUESTIONS].sort((a, b) => (+b.created_at) - (+a.created_at));
+  let items = [...QA_QUESTIONS].filter((q) => q.visibility !== "private" || solver || q.username === CURRENT_USER.username);
+  items.sort((a, b) => (+b.created_at) - (+a.created_at));
   if (QA_FILTER === "mine") items = items.filter((q) => q.username === CURRENT_USER.username);
   if (QA_FILTER === "pending") items = items.filter((q) => q.status !== "done");
   const countReplies = (qid) => QA_MESSAGES.filter((m) => m.question_id === qid).length;
@@ -2858,7 +2934,10 @@ async function renderQAAsync(main) {
             <div class="qa-card-body">
               <div class="qa-card-head">
                 <span class="qa-card-name">${esc(q.name)}</span>
-                <span class="chip ${q.status === "done" ? "chip-green" : "chip-gold"}">${q.status === "done" ? "✓ Đã xong" : "⏳ Chờ xử lý"}</span>
+                <span style="display:flex;gap:6px;flex-wrap:wrap">
+                  ${q.visibility === "private" ? `<span class="chip chip-pen">🔒 Riêng tư</span>` : ""}
+                  <span class="chip ${q.status === "done" ? "chip-green" : "chip-gold"}">${q.status === "done" ? "✓ Đã xong" : "⏳ Chờ xử lý"}</span>
+                </span>
               </div>
               <div class="qa-card-text">${esc((q.text || "").slice(0, 140))}${(q.text || "").length > 140 ? "…" : ""}</div>
               <div class="qa-card-meta">${new Date(+q.created_at).toLocaleString("vi-VN")} · 💬 ${countReplies(q.id)} tin nhắn</div>
@@ -2887,6 +2966,13 @@ function openAskQuestionModal() {
         <div class="field">
           <label>Mô tả thêm (không bắt buộc)</label>
           <textarea id="qa-ask-text" rows="3" placeholder="vd: Em không biết làm bước tính đạo hàm ạ..."></textarea>
+        </div>
+        <div class="field">
+          <label>Ai xem được câu hỏi này?</label>
+          <select id="qa-ask-visibility" class="select" style="width:100%">
+            <option value="public">🌍 Công khai — mọi học sinh đều xem được</option>
+            <option value="private">🔒 Riêng tư — chỉ tôi và người giải bài</option>
+          </select>
         </div>
         <p id="qa-ask-err" class="error-box hidden"></p>
         <div class="modal-actions">
@@ -2923,6 +3009,7 @@ function openAskQuestionModal() {
       image: pendingImage || "",
       text,
       status: "pending",
+      visibility: $("#qa-ask-visibility").value,
       created_at: Date.now(),
     };
     try {
@@ -2947,19 +3034,28 @@ async function renderQADetailAsync(main, id) {
   if (!q) { main.innerHTML = `<div class="empty"><div class="big">🚫</div>Không tìm thấy câu hỏi này.</div>`; return; }
 
   const solver = canSolve(CURRENT_USER);
-  const canChat = solver || CURRENT_USER.username === q.username;
+  const isOwner = CURRENT_USER.username === q.username;
+  if (q.visibility === "private" && !solver && !isOwner) {
+    main.innerHTML = `<div class="empty"><div class="big">🔒</div>Câu hỏi này ở chế độ riêng tư, bạn không có quyền xem.</div>`;
+    return;
+  }
+  const canChat = solver || isOwner;
   const msgs = QA_MESSAGES.filter((m) => m.question_id === id).sort((a, b) => (+a.created_at) - (+b.created_at));
 
   main.innerHTML = `
     <button class="btn btn-outline btn-sm" id="qa-back" style="margin-bottom:16px">← Quay lại danh sách</button>
     <div class="qa-detail-card">
       <div class="qa-detail-head">
-        <div>
-          <div class="qa-card-name">${esc(q.name)}</div>
-          <div class="qa-card-meta">${new Date(+q.created_at).toLocaleString("vi-VN")}</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          ${avatarHtml(q.username, q.name, 40)}
+          <div>
+            <div class="qa-card-name">${esc(q.name)}</div>
+            <div class="qa-card-meta">${new Date(+q.created_at).toLocaleString("vi-VN")}</div>
+          </div>
         </div>
         <span class="chip ${q.status === "done" ? "chip-green" : "chip-gold"}" id="qa-status-chip">${q.status === "done" ? "✓ Đã xong" : "⏳ Chờ xử lý"}</span>
       </div>
+      ${q.visibility === "private" ? `<span class="chip chip-pen" style="margin-bottom:12px;display:inline-block">🔒 Riêng tư</span>` : ""}
       ${q.image ? `<img class="qa-detail-image" src="${q.image}" />` : ""}
       ${q.text ? `<p class="qa-detail-text">${esc(q.text)}</p>` : ""}
       ${solver ? `<button class="btn btn-outline btn-sm" id="qa-toggle-status">${q.status === "done" ? "↺ Mở lại" : "✓ Đánh dấu đã xong"}</button>` : ""}
@@ -2968,7 +3064,7 @@ async function renderQADetailAsync(main, id) {
     <div class="comment-list" id="qa-chat-list">
       ${msgs.length === 0 ? `<p class="hint" style="padding:8px 0">Chưa có tin nhắn nào.</p>` : msgs.map((m) => `
         <div class="comment-item">
-          <div class="comment-avatar" style="background:${commentAvatarColor(m.name)}">${esc((m.name || "?")[0].toUpperCase())}</div>
+          ${avatarHtml(m.username, m.name, 32)}
           <div class="comment-body">
             <div class="comment-head">
               <span class="comment-name">${esc(m.name)}${m.role === "solver" || m.role === "admin" ? ' <span class="badge-solver">GIẢI BÀI</span>' : ""}</span>
@@ -3137,13 +3233,12 @@ function bindReportButtons(root, examId, examTitle, orderMap) {
 ===================================================== */
 const PART_LABELS = { p1: "Phần I", p2: "Phần II", p3: "Phần III" };
 
-function compressImageFile(file, cb) {
+function compressImageFile(file, cb, maxW) {
   const reader = new FileReader();
   reader.onload = () => {
     const img = new Image();
     img.onload = () => {
-      const maxW = 900;
-      const scale = Math.min(1, maxW / img.width);
+      const scale = Math.min(1, (maxW || 900) / img.width);
       const cv = document.createElement("canvas");
       cv.width = Math.round(img.width * scale);
       cv.height = Math.round(img.height * scale);
