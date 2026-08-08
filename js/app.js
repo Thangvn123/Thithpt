@@ -607,6 +607,13 @@ function stopTimer() {
 
 function renderTaking(main) {
   const ex = TAKING, st = TAKING_STATE;
+  const parts = [
+    { key: "p1", tab: "Phần I", list: ex.p1 },
+    { key: "p2", tab: "Phần II", list: ex.p2 },
+    { key: "p3", tab: "Phần III", list: ex.p3 },
+  ].filter((p) => p.list.length);
+  if (!st.activePart || !parts.some((p) => p.key === st.activePart)) st.activePart = parts[0] ? parts[0].key : "p1";
+
   main.innerHTML = `
     <div class="exam-wrap">
       <div class="exam-timerbar" id="timerbar">
@@ -628,6 +635,11 @@ function renderTaking(main) {
         <button class="btn btn-outline btn-sm" id="fs-reenter-btn">Vào lại toàn màn hình</button>
       </div>
 
+      ${parts.length > 1 ? `
+      <div class="exam-part-tabs">
+        ${parts.map((p) => `<button class="seg-btn ${p.key === st.activePart ? "active" : ""}" data-part-tab="${p.key}">${p.tab} <span class="part-tab-count" data-part-count="${p.key}"></span></button>`).join("")}
+      </div>` : ""}
+
       <div class="exam-paper">
         <div class="exam-paper-head">
           <p class="eyebrow">KỲ THI THỬ TỐT NGHIỆP THPT · MÔN ${esc(ex.subject.toUpperCase())}</p>
@@ -637,22 +649,24 @@ function renderTaking(main) {
         </div>
 
         ${ex.p1.length ? `
-          <div class="section-head"><h3>PHẦN I. Trắc nghiệm nhiều lựa chọn</h3><p>Mỗi câu đúng được 0,25 điểm. Chọn một phương án A, B, C hoặc D.</p></div>
+        <div class="exam-part" data-part-block="p1" ${st.activePart !== "p1" ? "hidden" : ""}>
+          <div class="section-head"><span class="sh-num">I</span><div><h3>PHẦN I. Trắc nghiệm nhiều lựa chọn</h3><p>Mỗi câu đúng được 0,25 điểm. Chọn một phương án A, B, C hoặc D.</p></div></div>
           ${ex.p1.map((q, i) => `
             <div class="q">
               <p class="q-text"><span class="q-num">Câu ${i + 1}.</span> ${esc(q.q)} <button class="q-report-btn" data-report-part="p1" data-report-idx="${i}" data-report-text="${esc(q.q)}" title="Báo lỗi câu này">🚩</button></p>
               ${q.img ? `<img class="q-img" src="${q.img}" alt="Hình minh họa câu ${i + 1}" loading="lazy" />` : ""}
               <div class="opts">
                 ${q.options.map((opt, j) => `
-                  <button class="opt" data-p1="${i}" data-letter="${"ABCD"[j]}">
+                  <button class="opt ${st.answers.p1[i] === "ABCD"[j] ? "selected" : ""}" data-p1="${i}" data-letter="${"ABCD"[j]}">
                     <span class="opt-letter">${"ABCD"[j]}.</span><span>${esc(opt)}</span>
                   </button>`).join("")}
               </div>
             </div>`).join("")}
-        ` : ""}
+        </div>` : ""}
 
         ${ex.p2.length ? `
-          <div class="section-head"><h3>PHẦN II. Trắc nghiệm đúng / sai</h3><p>Đúng 1 ý: 0,1đ · 2 ý: 0,25đ · 3 ý: 0,5đ · 4 ý: 1,0đ.</p></div>
+        <div class="exam-part" data-part-block="p2" ${st.activePart !== "p2" ? "hidden" : ""}>
+          <div class="section-head"><span class="sh-num">II</span><div><h3>PHẦN II. Trắc nghiệm đúng / sai</h3><p>Đúng 1 ý: 0,1đ · 2 ý: 0,25đ · 3 ý: 0,5đ · 4 ý: 1,0đ.</p></div></div>
           ${ex.p2.map((q, i) => `
             <div class="q">
               <p class="q-text"><span class="q-num">Câu ${i + 1}.</span> ${esc(q.q)} <button class="q-report-btn" data-report-part="p2" data-report-idx="${i}" data-report-text="${esc(q.q)}" title="Báo lỗi câu này">🚩</button></p>
@@ -661,24 +675,47 @@ function renderTaking(main) {
                 <div class="tf-row">
                   <span class="tf-text"><span class="tf-idx">${"abcd"[j]})</span> ${esc(it.text)}</span>
                   <div class="tf-btns">
-                    <button class="tf-btn true" data-p2q="${i}" data-p2i="${j}" data-val="1">Đ</button>
-                    <button class="tf-btn false" data-p2q="${i}" data-p2i="${j}" data-val="0">S</button>
+                    <button class="tf-btn true ${st.answers.p2[i] && st.answers.p2[i][j] === true ? "selected" : ""}" data-p2q="${i}" data-p2i="${j}" data-val="1">Đ</button>
+                    <button class="tf-btn false ${st.answers.p2[i] && st.answers.p2[i][j] === false ? "selected" : ""}" data-p2q="${i}" data-p2i="${j}" data-val="0">S</button>
                   </div>
                 </div>`).join("")}
             </div>`).join("")}
-        ` : ""}
+        </div>` : ""}
 
         ${ex.p3.length ? `
-          <div class="section-head"><h3>PHẦN III. Trả lời ngắn</h3><p>Mỗi câu đúng được 0,25 điểm. Nhập đáp án vào ô trống.</p></div>
+        <div class="exam-part" data-part-block="p3" ${st.activePart !== "p3" ? "hidden" : ""}>
+          <div class="section-head"><span class="sh-num">III</span><div><h3>PHẦN III. Trả lời ngắn</h3><p>Mỗi câu đúng được 0,25 điểm. Nhập đáp án vào ô trống.</p></div></div>
           ${ex.p3.map((q, i) => `
             <div class="short-row">
               <p class="q-text"><span class="q-num">Câu ${i + 1}.</span> ${esc(q.q)} <button class="q-report-btn" data-report-part="p3" data-report-idx="${i}" data-report-text="${esc(q.q)}" title="Báo lỗi câu này">🚩</button></p>
               ${q.img ? `<img class="q-img" src="${q.img}" alt="Hình minh họa câu ${i + 1}" loading="lazy" />` : ""}
-              <input class="short-input" data-p3="${i}" placeholder="Đáp án…" />
+              <input class="short-input" data-p3="${i}" placeholder="Đáp án…" value="${esc(st.answers.p3[i] || "")}" />
             </div>`).join("")}
-        ` : ""}
+        </div>` : ""}
       </div>
     </div>`;
+
+  function partCounts(key) {
+    if (key === "p1") return { a: Object.keys(st.answers.p1).length, t: ex.p1.length };
+    if (key === "p2") return { a: Object.values(st.answers.p2).reduce((s, o) => s + Object.keys(o).length, 0), t: ex.p2.reduce((s, q) => s + q.items.length, 0) };
+    return { a: Object.values(st.answers.p3).filter((v) => String(v || "").trim() !== "").length, t: ex.p3.length };
+  }
+  function updateTabCounts() {
+    $$("[data-part-count]", main).forEach((el) => {
+      const { a, t } = partCounts(el.dataset.partCount);
+      el.textContent = `(${a}/${t})`;
+    });
+  }
+  updateTabCounts();
+  $$("[data-part-tab]", main).forEach((b) =>
+    b.addEventListener("click", () => {
+      st.activePart = b.dataset.partTab;
+      $$("[data-part-tab]", main).forEach((x) => x.classList.toggle("active", x === b));
+      $$("[data-part-block]", main).forEach((el) => el.toggleAttribute("hidden", el.dataset.partBlock !== st.activePart));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      typesetMath($(`[data-part-block="${st.activePart}"]`, main));
+    })
+  );
 
   bindReportButtons(main, ex.id, ex.title, TAKING_ORDER_MAP);
 
@@ -687,7 +724,7 @@ function renderTaking(main) {
     b.addEventListener("click", () => {
       st.answers.p1[b.dataset.p1] = b.dataset.letter;
       $$(`[data-p1="${b.dataset.p1}"]`, main).forEach((x) => x.classList.toggle("selected", x === b));
-      updateProgress();
+      updateProgress(); updateTabCounts();
     })
   );
   $$("[data-p2q]", main).forEach((b) =>
@@ -696,13 +733,13 @@ function renderTaking(main) {
       if (!st.answers.p2[qi]) st.answers.p2[qi] = {};
       st.answers.p2[qi][ii] = b.dataset.val === "1";
       $$(`[data-p2q="${qi}"][data-p2i="${ii}"]`, main).forEach((x) => x.classList.toggle("selected", x === b));
-      updateProgress();
+      updateProgress(); updateTabCounts();
     })
   );
   $$("[data-p3]", main).forEach((inp) =>
     inp.addEventListener("input", () => {
       st.answers.p3[inp.dataset.p3] = inp.value;
-      updateProgress();
+      updateProgress(); updateTabCounts();
     })
   );
 
