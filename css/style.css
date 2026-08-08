@@ -275,9 +275,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .exam-paper-title { font-family: var(--font-display); font-size: 22px; color: var(--ink); margin: 6px 0 4px; }
 .exam-paper-meta { font-size: 12.5px; color: var(--pencil); }
 
-.section-head { margin: 30px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--ink); }
-.section-head h3 { font-family: var(--font-display); font-size: 17px; color: var(--ink); }
-.section-head p { font-size: 12px; color: var(--pencil); margin-top: 4px; }
+.section-head {
+  margin: 0 0 18px; padding: 14px 18px; border-radius: var(--radius);
+  background: var(--head-bg); display: flex; align-items: center; gap: 12px;
+  box-shadow: var(--shadow);
+}
+.section-head .sh-num {
+  width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.16);
+  display: flex; align-items: center; justify-content: center; font-weight: 800;
+  font-size: 15px; color: #fff; flex-shrink: 0; font-family: var(--font-mono);
+}
+.section-head h3 { font-family: var(--font-display); font-size: 16.5px; color: #fff; margin: 0; }
+.section-head p { font-size: 11.5px; color: rgba(255,255,255,.78); margin-top: 3px; }
+
+.exam-part-tabs {
+  display: flex; border: 1.5px solid var(--line); border-radius: var(--radius-sm); overflow: hidden;
+  margin-bottom: 18px; position: sticky; top: 150px; z-index: 20; box-shadow: var(--shadow);
+}
+.exam-part-tabs .seg-btn { flex: 1; font-size: 13px; }
+.part-tab-count { font-size: 10.5px; font-family: var(--font-mono); opacity: .8; display: block; }
 
 .q { margin-bottom: 22px; }
 .q-text { font-weight: 600; margin-bottom: 10px; line-height: 1.55; }
@@ -349,9 +365,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .rank-row:last-child { border-bottom: none; }
 .rank-row.me { background: var(--pen-soft); }
 .rank-pos { font-weight: 800; color: var(--pencil); font-size: 16px; }
-.rank-name { font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; min-width: 0; }
-.rank-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.rank-name { font-weight: 700; color: var(--text); display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.rank-name-text { min-width: 0; overflow-wrap: break-word; word-break: break-word; }
 .rank-row.me .rank-name { color: var(--pen); }
+.rank-name .avatar-img, .rank-name .comment-avatar { flex-shrink: 0; margin-top: 1px; }
 .rank-exam { display: block; font-size: 11.5px; font-weight: 400; color: var(--pencil); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rank-score { text-align: right; font-family: var(--font-mono); font-weight: 700; color: var(--red); }
 .rank-time { text-align: right; font-family: var(--font-mono); color: var(--pencil); font-size: 13px; }
