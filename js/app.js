@@ -887,7 +887,7 @@ function renderResult(main) {
       <p class="eyebrow">PHIẾU BÁO ĐIỂM</p>
       <h2 class="page-title" style="font-size:22px;margin-top:4px">${esc(r.examTitle)}</h2>
 
-      <div class="stamp-big"><b>${r.score10.toFixed(2)}</b><span>/ 10 ĐIỂM</span></div>
+      <div class="stamp-big"><b id="score-num">0.00</b><span>/ 10 ĐIỂM</span></div>
 
       <p class="card-meta">Điểm thô: <b style="color:var(--ink)">${r.raw}</b> / ${r.maxRaw} &nbsp;·&nbsp; Thời gian làm bài: ${mins} phút ${secs} giây</p>
       ${r.tabSwitches > 0 ? `<p class="anticheat-note">⚠️ Hệ thống ghi nhận bạn đã rời khỏi bài thi <b>${r.tabSwitches}</b> lần trong lúc làm bài.</p>` : ""}
@@ -911,6 +911,21 @@ function renderResult(main) {
   $("#back-btn").addEventListener("click", () => go("exams"));
   $("#review-btn").addEventListener("click", () => go("reviewexam", r.id));
   $("#rank-btn").addEventListener("click", () => go("rank"));
+  animateCountUp($("#score-num"), r.score10, 700);
+}
+
+/* Chạy số mượt từ 0 lên điểm số cuối cùng */
+function animateCountUp(el, target, duration) {
+  if (!el) return;
+  const start = performance.now();
+  function tick(now) {
+    const p = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - p, 3); // ease-out cubic
+    el.textContent = (target * eased).toFixed(2);
+    if (p < 1) requestAnimationFrame(tick);
+    else el.textContent = target.toFixed(2);
+  }
+  requestAnimationFrame(tick);
 }
 
 /* =====================================================
