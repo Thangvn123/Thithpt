@@ -4,6 +4,7 @@
 
 /* ---------- Trạng thái ---------- */
 let USERS = [], EXAMS = [], LESSONS = [], RESULTS = [], PROGRESS = [], NOTICES = [], COMMENTS = [], REPORTS = [], CHAPTER_ORDER = [], CHAPTER_LOCKS = {};
+let PRESENCE = [];
 let QA_QUESTIONS = [], QA_MESSAGES = [];
 let CURRENT_USER = null;
 let VIEW = "exams";
@@ -75,6 +76,8 @@ async function loadAllTables() {
   catch (err) { QA_QUESTIONS = []; console.warn("Chưa có bảng qa_questions (chạy SQL bổ sung để bật Hỏi bài):", err.message); }
   try { QA_MESSAGES = await DBX.list("qa_messages"); }
   catch (err) { QA_MESSAGES = []; console.warn("Chưa có bảng qa_messages (chạy SQL bổ sung để bật chat Hỏi bài):", err.message); }
+  try { PRESENCE = await DBX.list("presence"); }
+  catch (err) { PRESENCE = []; console.warn("Chưa có bảng presence (chạy SQL bổ sung để bật hiện thị học sinh đang online):", err.message); }
   try {
     const rows = await DBX.list("settings");
     const orderRow = rows.find((r) => r.key === "chapter_order");
@@ -124,6 +127,7 @@ async function sync(...tables) {
       else if (t === "question_reports") REPORTS = rows;
       else if (t === "qa_questions") QA_QUESTIONS = rows;
       else if (t === "qa_messages") QA_MESSAGES = rows;
+      else if (t === "presence") PRESENCE = rows;
       else if (t === "settings") {
         const orderRow = rows.find((r) => r.key === "chapter_order");
         CHAPTER_ORDER = (orderRow && orderRow.value) || [];
@@ -398,6 +402,10 @@ function login(u, restore) {
   }
 }
 function showAuth() {
+  if (CURRENT_USER) {
+    PRESENCE = PRESENCE.filter((p) => p.username !== CURRENT_USER.username);
+    DBX.remove("presence", "username", CURRENT_USER.username).catch(() => {});
+  }
   CURRENT_USER = null;
   stopTimer();
   clearInterval(SESS_TIMER);
@@ -411,7 +419,23 @@ let SESS_TIMER = null;
 function startSessionWatch() {
   clearInterval(SESS_TIMER);
   if (!DBX.remote) return;
-  SESS_TIMER = setInterval(() => { sync("users", "exams", "lessons", "notices", "comments", "question_reports", "qa_questions", "qa_messages"); }, 60000); // mỗi phút kiểm tra phiên + thông báo mới
+  sendHeartbeat();
+  SESS_TIMER = setInterval(() => {
+    sync("users", "exams", "lessons", "notices", "comments", "question_reports", "qa_questions", "qa_messages", "presence");
+    sendHeartbeat();
+  }, 60000); // mỗi phút kiểm tra phiên + thông báo mới + báo còn đang online
+}
+
+/* Báo cho hệ thống biết tài khoản này vẫn đang mở web (dùng để hiện "đang online" ở trang chủ) */
+function sendHeartbeat() {
+  if (!CURRENT_USER) return;
+  const row = { username: CURRENT_USER.username, last_active: Date.now() };
+  const idx = PRESENCE.findIndex((p) => p.username === CURRENT_USER.username);
+  if (idx > -1) PRESENCE[idx] = row; else PRESENCE.push(row);
+  (async () => {
+    try { await DBX.remove("presence", "username", CURRENT_USER.username); } catch (e) {}
+    try { await DBX.insert("presence", row); } catch (e) { console.warn("Không cập nhật được trạng thái online:", e.message); }
+  })();
 }
 function verifySession() {
   if (!CURRENT_USER) return;
@@ -478,7 +502,7 @@ function go(view, payload) {
 ===================================================== */
 function renderExams(main) { renderExamsAsync(main); }
 async function renderExamsAsync(main) {
-  await syncView(main, ["exams", "results"]);
+  await syncView(main, ["exams", "results", "presence"]);
   if (VIEW !== "exams") return;
   const myBest = (id) => {
     const rs = RESULTS.filter((r) => r.examId === id && r.username === CURRENT_USER.username);
@@ -486,6 +510,9 @@ async function renderExamsAsync(main) {
   };
   const nStudents = new Set(RESULTS.map((r) => r.username)).size;
   const visibleExams = getVisibleExams();
+  const onlineUsers = PRESENCE
+    .filter((p) => Date.now() - (+p.last_active) < 3 * 60000)
+    .sort((a, b) => (+b.last_active) - (+a.last_active));
 
   main.innerHTML = `
     <div class="hero">
@@ -503,6 +530,21 @@ async function renderExamsAsync(main) {
         <div class="countdown-numbers" id="countdown-numbers"></div>
       </div>
     </div>
+
+    ${onlineUsers.length ? `
+    <div class="online-strip">
+      <span class="online-strip-label">🟢 ${onlineUsers.length} người đang học ngay bây giờ</span>
+      <div class="online-avatars">
+        ${onlineUsers.slice(0, 30).map((p) => {
+          const u = USERS.find((x) => x.username === p.username);
+          const name = (u ? u.name : p.username) + (p.username === CURRENT_USER.username ? " (bạn)" : "");
+          return `<div class="online-avatar-item" title="${esc(name)}">
+            <div class="online-avatar-dot">${avatarHtml(p.username, u ? u.name : p.username, 42)}</div>
+            <span class="online-avatar-name">${esc((u ? u.name : p.username).split(" ").slice(-1)[0])}</span>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>` : ""}
 
     <div class="page-head">
       <div>
