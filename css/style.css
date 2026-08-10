@@ -668,13 +668,15 @@ body { transition: background-color .35s ease, color .35s ease; }
 .chapter-block { margin-bottom: 38px; }
 .chapter-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
-  padding: 12px 18px; margin-bottom: 16px;
+  padding: 12px 18px 16px; margin-bottom: 16px; position: relative;
   background: linear-gradient(135deg, var(--head-bg), var(--pen));
   border-radius: var(--radius-sm); color: #fff;
   box-shadow: 0 5px 16px rgba(41, 70, 200, .25);
 }
 .chapter-head h3 { font-family: var(--font-display); font-size: 18px; }
 .chapter-head span { font-size: 12px; opacity: .8; white-space: nowrap; }
+.chapter-progress-bar { position: absolute; left: 18px; right: 18px; bottom: 7px; height: 4px; background: rgba(255,255,255,.25); border-radius: 999px; overflow: hidden; margin: 0; }
+.chapter-progress-fill { height: 100%; background: #fff; border-radius: 999px; transition: width .5s ease; }
 .cat-head {
   font-weight: 800; font-size: 14px; color: var(--ink);
   padding: 4px 0 6px 2px; margin-bottom: 10px;
