@@ -1148,19 +1148,24 @@ function renderStudentProgress(main, username) {
           <div class="score-stamp" style="width:58px;height:58px;font-size:15px;flex-shrink:0">${pct}%</div>
           <div style="font-size:13.5px;color:var(--pencil);line-height:1.7">
             Đã xem <b style="color:var(--ink)">${watched.size}</b>/${totalLessons} bài giảng
-            ${lastLesson ? `· gần nhất: <b style="color:var(--ink)">${esc(lastLesson.title)}</b> (${new Date(last.created_at).toLocaleDateString("vi-VN")})` : ""}<br/>
+            ${lastLesson ? `· gần nhất: <b style="color:var(--ink)">${esc(lastLesson.title)}</b> — <span title="${formatDateTimeVi(last.created_at)}">${relativeTimeVi(+last.created_at)}</span> <span style="color:var(--pencil)">(${formatDateTimeVi(+last.created_at)})</span>` : "· chưa xem bài nào"}<br/>
             Đã thi <b style="color:var(--ink)">${myExamCount}</b> đề · điểm trung bình <b style="color:var(--red)">${myAvg}</b>
           </div>
         </div>
+        ${last && (Date.now() - (+last.created_at)) > 7 * 86400000 ? `<p class="restricted-note" style="margin-top:12px">⚠️ Đã hơn ${Math.floor((Date.now() - (+last.created_at)) / 86400000)} ngày học sinh này chưa xem bài giảng nào mới.</p>` : ""}
       </div>
 
       ${chapterKeys.length === 0 ? `<div class="empty">Chưa có bài giảng nào trong hệ thống.</div>` : chapterKeys.map((ch) => {
         const catKeys = Object.keys(tree[ch]).sort((a, b) => (catOrder.indexOf(a) === -1 ? 99 : catOrder.indexOf(a)) - (catOrder.indexOf(b) === -1 ? 99 : catOrder.indexOf(b)));
         const chapterLessons = Object.values(tree[ch]).flat();
         const chDone = chapterLessons.filter((l) => watched.has(l.id)).length;
+        const chPct = chapterLessons.length ? Math.round((chDone / chapterLessons.length) * 100) : 0;
         return `
         <details class="chapter-block" data-fold="sp:${esc(ch)}" ${foldIsOpen("sp:" + ch, true) ? "open" : ""}>
-          <summary class="chapter-head"><h3>📁 ${esc(ch)}</h3><span>${chDone}/${chapterLessons.length} đã học <b class="chev">▾</b></span></summary>
+          <summary class="chapter-head">
+            <h3>📁 ${esc(ch)}</h3><span>${chDone}/${chapterLessons.length} đã học <b class="chev">▾</b></span>
+            <div class="chapter-progress-bar"><div class="chapter-progress-fill" style="width:${chPct}%"></div></div>
+          </summary>
           <div class="chapter-body">
             ${catKeys.map((c) => `
               <div class="cat-head" style="cursor:default">${esc(c)}</div>
@@ -1170,7 +1175,7 @@ function renderStudentProgress(main, username) {
                   return `<div class="sp-row ${w ? "sp-done" : ""}">
                     <span class="sp-check">${w ? "✓" : "○"}</span>
                     <span class="sp-title">${esc(l.title)}</span>
-                    <span class="sp-time">${w ? new Date(w).toLocaleDateString("vi-VN") : "chưa xem"}</span>
+                    <span class="sp-time" ${w ? `title="${formatDateTimeVi(w)}"` : ""}>${w ? relativeTimeVi(w) : "chưa xem"}</span>
                   </div>`;
                 }).join("")}
               </div>`).join("")}
@@ -1515,6 +1520,7 @@ async function renderLessonsAsync(main, filter) {
           <summary class="chapter-head">
             <h3>📁 ${esc(ch)}${CURRENT_USER.role === "admin" && ownLock ? ` <span class="chip chip-gold" style="vertical-align:2px">🔓 cần ${ownLock.examTitles.length} đề</span>` : ""}</h3>
             <span>${(() => { const all = Object.values(tree[ch]).flat(); const d = all.filter((x) => watched.has(x.id)).length; return d + "/" + all.length + " đã học"; })()} <b class="chev">▾</b></span>
+            <div class="chapter-progress-bar">${(() => { const all = Object.values(tree[ch]).flat(); const d = all.filter((x) => watched.has(x.id)).length; const p = all.length ? Math.round((d / all.length) * 100) : 0; return `<div class="chapter-progress-fill" style="width:${p}%"></div>`; })()}</div>
           </summary>
           <div class="chapter-body">
             ${catKeysOf(ch).map((c) => `
@@ -1722,6 +1728,21 @@ function bindFoldMemory(root) {
 }
 
 /* So sánh "tự nhiên" tiếng Việt: Bài 2 đứng trước Bài 10, Chương 1 trước Chương 2 */
+/* Thời gian chi tiết: "5 phút trước", "3 giờ trước"... kèm ngày giờ đầy đủ khi đã lâu */
+function relativeTimeVi(ts) {
+  const diff = Date.now() - ts;
+  const min = Math.floor(diff / 60000), hr = Math.floor(diff / 3600000), day = Math.floor(diff / 86400000);
+  if (diff < 0 || min < 1) return "vừa xong";
+  if (min < 60) return `${min} phút trước`;
+  if (hr < 24) return `${hr} giờ trước`;
+  if (day < 7) return `${day} ngày trước`;
+  return formatDateTimeVi(ts);
+}
+function formatDateTimeVi(ts) {
+  const d = new Date(ts);
+  return d.toLocaleDateString("vi-VN") + " lúc " + d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+}
+
 function naturalVi(a, b) {
   return String(a).localeCompare(String(b), "vi", { numeric: true, sensitivity: "base" });
 }
@@ -2687,11 +2708,32 @@ async function renderAdminAsync(main, tab) {
       })
     ));
   } else if (tab === "lessons") {
-    list.innerHTML = LESSONS.length ? LESSONS.map((l) => row(
-      esc(l.title),
-      `${esc(l.subject)} · ${esc(l.category || "Khác")}${l.chapter ? " · " + esc(l.chapter) : ""} · ${l.docs.length} tài liệu · đăng bởi ${esc(l.uploader)}`,
-      `<span style="display:flex;gap:6px;flex-shrink:0"><button class="btn btn-outline btn-sm" data-edit-lesson="${l.id}">Sửa</button><button class="btn btn-danger btn-sm" data-del-lesson="${l.id}">Xoá</button></span>`
-    )).join("") : `<div class="admin-row"><span class="s">Chưa có bài giảng.</span></div>`;
+    if (!LESSONS.length) {
+      list.innerHTML = `<div class="admin-row"><span class="s">Chưa có bài giảng.</span></div>`;
+    } else {
+      const tree = buildChapterTree(LESSONS);
+      const chapterKeys = orderChapterKeys(tree);
+      const catOrder = [...LESSON_CATEGORIES, "Khác"];
+      list.innerHTML = chapterKeys.map((ch) => {
+        const catKeys = Object.keys(tree[ch]).sort((a, b) => (catOrder.indexOf(a) === -1 ? 99 : catOrder.indexOf(a)) - (catOrder.indexOf(b) === -1 ? 99 : catOrder.indexOf(b)));
+        const chapterLessons = Object.values(tree[ch]).flat();
+        return `
+        <details class="chapter-block" data-fold="adminls:${esc(ch)}" ${foldIsOpen("adminls:" + ch, true) ? "open" : ""}>
+          <summary class="chapter-head"><h3>📁 ${esc(ch)}</h3><span>${chapterLessons.length} bài <b class="chev">▾</b></span></summary>
+          <div class="chapter-body">
+            ${catKeys.map((c) => `
+              <div class="cat-head" style="cursor:default">${esc(c)} <span style="font-weight:400;color:var(--pencil)">· ${tree[ch][c].length} bài</span></div>
+              ${tree[ch][c].slice().sort((a, b) => naturalVi(a.title, b.title)).map((l) => row(
+                esc(l.title),
+                `${esc(l.subject)}${l.lesson ? " · " + esc(l.lesson) : ""} · ${l.docs.length} tài liệu · đăng bởi ${esc(l.uploader)}`,
+                `<span style="display:flex;gap:6px;flex-shrink:0"><button class="btn btn-outline btn-sm" data-edit-lesson="${l.id}">Sửa</button><button class="btn btn-danger btn-sm" data-del-lesson="${l.id}">Xoá</button></span>`
+              )).join("")}
+            `).join("")}
+          </div>
+        </details>`;
+      }).join("");
+      bindFoldMemory(main);
+    }
     $$("[data-edit-lesson]").forEach((b) => b.addEventListener("click", () => go("editlesson", b.dataset.editLesson)));
     $$("[data-del-lesson]").forEach((b) => b.addEventListener("click", () =>
       confirmModal("Xoá bài giảng?", "Video và tài liệu kèm theo sẽ bị xoá khỏi hệ thống.", async () => {
