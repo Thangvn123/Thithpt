@@ -180,6 +180,23 @@ input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {
 .user-profile-btn:hover { background: var(--surface-2); }
 .user-avatar-mini { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 .avatar-img { border-radius: 50%; object-fit: cover; flex-shrink: 0; display: inline-block; }
+
+/* ---------- Học sinh đang online (trang chủ) ---------- */
+.online-strip { margin: 22px 0 30px; }
+.online-strip-label { font-size: 12.5px; font-weight: 700; color: var(--pencil); display: block; margin-bottom: 12px; }
+.online-avatars { display: flex; gap: 16px; overflow-x: auto; padding: 2px 2px 8px; }
+.online-avatar-item { display: flex; flex-direction: column; align-items: center; gap: 5px; flex-shrink: 0; width: 54px; animation: rise .3s ease both; }
+.online-avatar-dot { position: relative; }
+.online-avatar-dot::after {
+  content: ""; position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px;
+  background: var(--green); border: 2px solid var(--paper); border-radius: 50%;
+  animation: onlinePulse 2s infinite;
+}
+@keyframes onlinePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(30, 123, 69, .45); }
+  50% { box-shadow: 0 0 0 4px rgba(30, 123, 69, 0); }
+}
+.online-avatar-name { font-size: 10.5px; color: var(--pencil); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 54px; }
 .badge-admin {
   font-size: 10px; font-weight: 800; letter-spacing: .06em;
   background: var(--red-soft); color: var(--red);
