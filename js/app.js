@@ -534,13 +534,13 @@ async function renderExamsAsync(main) {
     ${onlineUsers.length ? `
     <div class="online-strip">
       <span class="online-strip-label">🟢 ${onlineUsers.length} người đang học ngay bây giờ</span>
-      <div class="online-avatars">
+      <div class="online-list">
         ${onlineUsers.slice(0, 30).map((p) => {
           const u = USERS.find((x) => x.username === p.username);
           const name = (u ? u.name : p.username) + (p.username === CURRENT_USER.username ? " (bạn)" : "");
-          return `<div class="online-avatar-item" title="${esc(name)}">
-            <div class="online-avatar-dot">${avatarHtml(p.username, u ? u.name : p.username, 42)}</div>
-            <span class="online-avatar-name">${esc((u ? u.name : p.username).split(" ").slice(-1)[0])}</span>
+          return `<div class="online-row">
+            <div class="online-avatar-dot">${avatarHtml(p.username, u ? u.name : p.username, 34)}</div>
+            <span class="online-row-name">${esc(name)}</span>
           </div>`;
         }).join("")}
       </div>
