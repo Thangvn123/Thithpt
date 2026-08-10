@@ -1041,6 +1041,12 @@ img, video, iframe { max-width: 100%; }
 .sp-title { flex: 1; color: var(--text); }
 .sp-row.sp-done .sp-title { color: var(--pencil); }
 .sp-time { font-size: 11.5px; color: var(--pencil); white-space: nowrap; flex-shrink: 0; }
+.sp-unit-head {
+  font-weight: 700; font-size: 13px; color: var(--ink); margin: 10px 0 2px; padding-left: 2px;
+  display: flex; align-items: center; gap: 6px;
+}
+.sp-unit-head span { font-size: 11.5px; color: var(--pencil); font-weight: 400; }
+.sp-unit-body { margin-left: 14px; padding-left: 10px; border-left: 2px solid var(--line); }
 
 /* ---------- Sắp xếp chương (kéo-thả) ---------- */
 .oc-list { display: flex; flex-direction: column; gap: 8px; touch-action: none; }
