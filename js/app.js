@@ -1107,6 +1107,38 @@ function renderMyAttempts(main, examId) {
 /* =====================================================
    TIẾN ĐỘ HỌC CỦA HỌC SINH (admin xem chi tiết)
 ===================================================== */
+/* Gom danh sách bài trong 1 chuyên mục thành từng "Bài X" (nếu có nhiều Phần),
+   dùng chung cho trang Tiến độ học sinh — cùng logic gom nhóm với renderCategoryUnits() */
+function spUnitsHtml(list, watched) {
+  const groupMap = {};
+  const singles = [];
+  for (const l of list) {
+    if (l.lesson) (groupMap[l.lesson] = groupMap[l.lesson] || []).push(l);
+    else singles.push(l);
+  }
+  const units = [
+    ...Object.entries(groupMap).map(([name, items]) => ({ name, group: true, items: items.sort((a, b) => naturalVi(a.title, b.title)) })),
+    ...singles.map((l) => ({ name: l.title, group: false, items: [l] })),
+  ].sort((a, b) => naturalVi(a.name, b.name));
+
+  const rowHtml = (l) => {
+    const w = watched.get(l.id);
+    return `<div class="sp-row ${w ? "sp-done" : ""}">
+      <span class="sp-check">${w ? "✓" : "○"}</span>
+      <span class="sp-title">${esc(l.title)}</span>
+      <span class="sp-time" ${w ? `title="${formatDateTimeVi(w)}"` : ""}>${w ? relativeTimeVi(w) : "chưa xem"}</span>
+    </div>`;
+  };
+
+  return units.map((u) => {
+    if (!u.group) return rowHtml(u.items[0]);
+    const done = u.items.filter((l) => watched.has(l.id)).length;
+    return `
+      <div class="sp-unit-head">📖 ${esc(u.name)} <span>${done}/${u.items.length} phần</span></div>
+      <div class="sp-unit-body">${u.items.map(rowHtml).join("")}</div>`;
+  }).join("");
+}
+
 function renderStudentProgress(main, username) {
   if (CURRENT_USER.role !== "admin") return go("exams");
   const stu = USERS.find((u) => u.username === username);
@@ -1170,14 +1202,7 @@ function renderStudentProgress(main, username) {
             ${catKeys.map((c) => `
               <div class="cat-head" style="cursor:default">${esc(c)}</div>
               <div class="sp-list">
-                ${tree[ch][c].slice().sort((a, b) => naturalVi(a.title, b.title)).map((l) => {
-                  const w = watched.get(l.id);
-                  return `<div class="sp-row ${w ? "sp-done" : ""}">
-                    <span class="sp-check">${w ? "✓" : "○"}</span>
-                    <span class="sp-title">${esc(l.title)}</span>
-                    <span class="sp-time" ${w ? `title="${formatDateTimeVi(w)}"` : ""}>${w ? relativeTimeVi(w) : "chưa xem"}</span>
-                  </div>`;
-                }).join("")}
+                ${spUnitsHtml(tree[ch][c], watched)}
               </div>`).join("")}
           </div>
         </details>`;
