@@ -76,7 +76,7 @@ async function loadAllTables() {
   catch (err) { QA_QUESTIONS = []; console.warn("Chưa có bảng qa_questions (chạy SQL bổ sung để bật Hỏi bài):", err.message); }
   try { QA_MESSAGES = await DBX.list("qa_messages"); }
   catch (err) { QA_MESSAGES = []; console.warn("Chưa có bảng qa_messages (chạy SQL bổ sung để bật chat Hỏi bài):", err.message); }
-  try { PRESENCE = await DBX.list("presence"); }
+  try { PRESENCE = await DBX.list("presence", "last_active"); }
   catch (err) { PRESENCE = []; console.warn("Chưa có bảng presence (chạy SQL bổ sung để bật hiện thị học sinh đang online):", err.message); }
   try {
     const rows = await DBX.list("settings");
@@ -116,7 +116,7 @@ async function sync(...tables) {
   if (!DBX.remote) return;
   for (const t of tables) {
     try {
-      const rows = await DBX.list(t);
+      const rows = await DBX.list(t, t === "presence" ? "last_active" : undefined);
       if (t === "users") USERS = rows;
       else if (t === "exams") EXAMS = rows.map(rowToExam);
       else if (t === "lessons") LESSONS = rows.map(rowToLesson);

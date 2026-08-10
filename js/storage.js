@@ -28,9 +28,10 @@ const DBX = {
     }
   },
 
-  async list(table) {
+  async list(table, orderCol) {
     if (!this.remote) return LocalDB.list(table);
-    const res = await fetch(this.base + table + "?select=*&order=created_at.asc", { headers: this.headers });
+    const order = orderCol || "created_at";
+    const res = await fetch(this.base + table + "?select=*&order=" + order + ".asc", { headers: this.headers });
     if (!res.ok) throw new Error("SQL: không đọc được bảng " + table + " (HTTP " + res.status + ")");
     return res.json();
   },
