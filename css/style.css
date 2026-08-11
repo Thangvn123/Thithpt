@@ -955,6 +955,13 @@ img, video, iframe { max-width: 100%; }
 }
 .comment-body { flex: 1; min-width: 0; }
 .comment-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.msg-recall-btn {
+  background: none; border: none; cursor: pointer; font-size: 12px; opacity: .55; padding: 2px 4px; border-radius: 4px;
+}
+.msg-recall-btn:hover { opacity: 1; background: var(--surface-2); }
+.recalled-text { font-style: italic; color: var(--pencil); }
+.btn-danger-outline { border-color: #e0554a !important; color: #c73a2f !important; }
+.btn-danger-outline:hover { background: #fdecea !important; }
 .comment-name { font-weight: 800; font-size: 13px; color: var(--ink); }
 .comment-time { font-size: 11px; color: var(--pencil); }
 .comment-text { font-size: 13.5px; color: var(--text); margin-top: 3px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
@@ -1012,25 +1019,103 @@ img, video, iframe { max-width: 100%; }
 .qa-detail-image { max-width: 100%; border-radius: 8px; border: 1px solid var(--line); margin-bottom: 12px; display: block; }
 .qa-detail-text { font-size: 14px; color: var(--text); line-height: 1.6; margin-bottom: 12px; white-space: pre-wrap; }
 
-/* ---------- Nhắn tin riêng (DM) ---------- */
-.dm-bubble-row { display: flex; gap: 8px; align-items: flex-end; }
-.dm-bubble-row.mine { flex-direction: row-reverse; }
-.dm-bubble {
-  max-width: 72%; background: var(--card); border: 1.5px solid var(--line);
-  border-radius: 14px; padding: 9px 13px; animation: rise .3s ease both;
+/* ---------- Nhắn tin riêng (DM) — phong cách Messenger ---------- */
+.dm-chatcard {
+  display: flex; flex-direction: column;
+  height: min(78vh, 680px); min-height: 420px;
+  background: var(--surface); border: 1.5px solid var(--line); border-radius: 16px;
+  overflow: hidden; box-shadow: var(--shadow-lift);
 }
-.dm-bubble-row.mine .dm-bubble { background: var(--pen-soft); border-color: var(--pen); }
-.dm-bubble-text { font-size: 13.5px; color: var(--text); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-.dm-bubble-time { font-size: 10.5px; color: var(--pencil); margin-top: 4px; text-align: right; }
-#dm-thread.comment-list { max-height: 460px; overflow-y: auto; padding-right: 4px; }
+.dm-header {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  padding: 10px 14px; border-bottom: 1.5px solid var(--line); background: var(--surface);
+}
+.dm-header-user { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.dm-icon-btn {
+  width: 36px; height: 36px; border-radius: 50%; border: none; background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center; font-size: 16px; cursor: pointer;
+  flex-shrink: 0; transition: background .15s;
+}
+.dm-icon-btn:hover { background: var(--line); }
+.dm-icon-btn-sm { width: 32px; height: 32px; font-size: 15px; }
+.dm-avatar-online { position: relative; flex-shrink: 0; }
+.dm-online-dot {
+  position: absolute; bottom: 0; right: 0; width: 11px; height: 11px; border-radius: 50%;
+  background: #31a24c; border: 2px solid var(--surface);
+}
+.dm-status { font-size: 11.5px; color: var(--pencil); display: flex; align-items: center; gap: 4px; }
+.dm-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #31a24c; display: inline-block; }
+
+.dm-thread {
+  flex: 1; overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column;
+  scroll-behavior: smooth; background: var(--surface);
+}
+.dm-divider { text-align: center; font-size: 11px; color: var(--pencil); margin: 14px 0 10px; }
+.dm-bubble-row { display: flex; gap: 6px; align-items: flex-end; margin-bottom: 2px; }
+.dm-bubble-row.mine { flex-direction: row-reverse; }
+.dm-avatar-slot { width: 26px; flex-shrink: 0; }
+.dm-bubble {
+  max-width: 68%; background: #e4e6eb; color: #050505;
+  border-radius: 18px; padding: 8px 13px; position: relative; animation: rise .25s ease both;
+}
+.dm-bubble-row.mine .dm-bubble { background: linear-gradient(135deg,#0084ff,#0068d6); color: #fff; }
+.dm-bubble-row:not(.mine) .dm-bubble { border-bottom-left-radius: 5px; }
+.dm-bubble-row:not(.mine).group-start .dm-bubble { border-top-left-radius: 18px; }
+.dm-bubble-row.mine .dm-bubble { border-bottom-right-radius: 5px; }
+.dm-bubble-row.mine.group-start .dm-bubble { border-top-right-radius: 18px; }
+.dm-bubble-row:not(.group-end) .dm-bubble { margin-bottom: 1px; }
+.dm-bubble-media { padding: 4px; background: transparent !important; }
+.dm-bubble-media .dm-bubble-text { padding: 6px 9px 2px; }
+.dm-bubble-row.mine .dm-bubble-media .dm-bubble-text { color: var(--ink); }
+.dm-media { max-width: 240px; max-height: 300px; border-radius: 14px; display: block; object-fit: cover; }
+.dm-bubble-text { font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.dm-bubble-recalled { background: var(--surface-2) !important; color: var(--pencil) !important; }
+.recalled-text { font-style: italic; }
+.dm-time-stamp { text-align: right; font-size: 10.5px; color: var(--pencil); margin: 2px 4px 10px 0; }
+.dm-time-stamp:not(.mine) { text-align: left; margin-left: 34px; }
+
+.dm-recall-btn {
+  position: absolute; top: -8px; right: -6px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--surface); border: 1px solid var(--line); color: var(--pencil); font-size: 11px;
+  line-height: 1; cursor: pointer; opacity: 0; transition: opacity .15s; display: flex; align-items: center; justify-content: center;
+}
+.dm-bubble-row.mine:hover .dm-recall-btn { opacity: 1; }
+
+.dm-compose { flex-shrink: 0; padding: 10px 12px 12px; border-top: 1.5px solid var(--line); position: relative; }
+.dm-compose-row { display: flex; align-items: center; gap: 6px; }
+.dm-input-pill {
+  flex: 1; display: flex; align-items: center; gap: 4px;
+  background: var(--surface-2); border-radius: 20px; padding: 4px 6px 4px 14px; min-width: 0;
+}
+.dm-input-pill input {
+  flex: 1; border: none; background: transparent; outline: none; font-size: 14px;
+  padding: 7px 0; color: var(--text); min-width: 0;
+}
+.dm-send-btn {
+  width: 38px; height: 38px; border-radius: 50%; border: none; background: transparent;
+  font-size: 20px; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  transition: transform .1s;
+}
+.dm-send-btn.active { background: #0084ff; color: #fff; font-size: 16px; }
+.dm-send-btn:active { transform: scale(.9); }
+.dm-preview-item { position: relative; display: inline-block; margin: 0 0 8px 14px; }
+.dm-preview-item img, .dm-preview-item video { max-width: 160px; max-height: 160px; border-radius: 10px; display: block; }
+.dm-preview-item button {
+  position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--ink); color: #fff; border: none; font-size: 11px; cursor: pointer; line-height: 1;
+}
 .dm-emoji-pop {
-  position: absolute; bottom: 40px; left: 0; z-index: 20;
+  position: absolute; bottom: 62px; left: 12px; z-index: 20;
   background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--radius-sm);
   padding: 8px; box-shadow: var(--shadow-lift); display: grid;
   grid-template-columns: repeat(8, 1fr); gap: 2px; width: 280px; max-width: 90vw;
 }
 .dm-emoji-item { font-size: 18px; padding: 4px; border-radius: 6px; background: none; border: none; cursor: pointer; }
 .dm-emoji-item:hover { background: var(--surface-2); }
+@media (max-width: 640px) {
+  .dm-chatcard { height: calc(100vh - 210px); border-radius: 10px; }
+  .dm-bubble { max-width: 78%; }
+}
 
 /* ---------- Trộn đề ngẫu nhiên ---------- */
 .shuffle-check {
