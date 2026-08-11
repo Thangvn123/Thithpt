@@ -57,6 +57,17 @@ const DBX = {
     });
     if (!res.ok) throw new Error("SQL: không xoá được ở bảng " + table);
   },
+
+  async removeMany(table, col, values) {
+    if (!values || values.length === 0) return;
+    if (!this.remote) { values.forEach((v) => LocalDB.remove(table, col, v)); return; }
+    const list = values.map((v) => encodeURIComponent(v)).join(",");
+    const res = await fetch(this.base + table + "?" + col + "=in.(" + list + ")", {
+      method: "DELETE",
+      headers: this.headers,
+    });
+    if (!res.ok) throw new Error("SQL: không xoá được ở bảng " + table);
+  },
 };
 
 /* ---------- Chế độ cục bộ (localStorage) ---------- */

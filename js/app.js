@@ -3099,7 +3099,7 @@ async function renderQAAsync(main) {
       <div class="qa-list">
         ${items.map((q) => `
           <div class="qa-card" data-qaopen="${q.id}">
-            ${q.image ? `<img class="qa-thumb" src="${q.image}" />` : `<div class="qa-thumb qa-thumb-empty">📝</div>`}
+            ${q.image ? `<img class="qa-thumb" src="${q.image}" />` : q.video ? `<div class="qa-thumb qa-thumb-empty">🎥</div>` : `<div class="qa-thumb qa-thumb-empty">📝</div>`}
             <div class="qa-card-body">
               <div class="qa-card-head">
                 <span class="qa-card-name">${esc(q.name)}</span>
@@ -3130,6 +3130,7 @@ function openAskQuestionModal() {
         <div class="field">
           <label>Ảnh câu hỏi</label><br/>
           <label class="btn btn-outline btn-sm">📷 Chọn ảnh<input type="file" accept="image/*" id="qa-ask-file" class="hidden" /></label>
+          <label class="btn btn-outline btn-sm">🎥 Chọn video<input type="file" accept="video/*" id="qa-ask-vfile" class="hidden" /></label>
           <div id="qa-ask-preview" style="margin-top:10px"></div>
         </div>
         <div class="field">
@@ -3151,6 +3152,7 @@ function openAskQuestionModal() {
       </div>
     </div>`;
   let pendingImage = null;
+  let pendingVideo = null;
   $("#qa-ask-overlay").addEventListener("click", (e) => { if (e.target.id === "qa-ask-overlay") $("#modal-root").innerHTML = ""; });
   $("#qa-ask-cancel").addEventListener("click", () => { $("#modal-root").innerHTML = ""; });
   $("#qa-ask-file").addEventListener("change", (e) => {
@@ -3161,11 +3163,19 @@ function openAskQuestionModal() {
       $("#qa-ask-preview").innerHTML = dataUrl ? `<img src="${dataUrl}" style="max-width:100%;border-radius:8px;border:1px solid var(--line)" />` : "";
     });
   });
+  $("#qa-ask-vfile").addEventListener("change", (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    readVideoFile(f, (dataUrl) => {
+      pendingVideo = dataUrl;
+      $("#qa-ask-preview").innerHTML = dataUrl ? `<video src="${dataUrl}" controls style="max-width:100%;border-radius:8px;border:1px solid var(--line)"></video>` : "";
+    });
+  });
   $("#qa-ask-submit").addEventListener("click", async () => {
     const text = $("#qa-ask-text").value.trim();
     const errEl = $("#qa-ask-err");
-    if (!pendingImage && !text) {
-      errEl.textContent = "Hãy chọn ảnh hoặc mô tả câu hỏi.";
+    if (!pendingImage && !pendingVideo && !text) {
+      errEl.textContent = "Hãy chọn ảnh, video hoặc mô tả câu hỏi.";
       errEl.classList.remove("hidden");
       return;
     }
@@ -3176,6 +3186,7 @@ function openAskQuestionModal() {
       username: CURRENT_USER.username,
       name: CURRENT_USER.name,
       image: pendingImage || "",
+      video: pendingVideo || "",
       text,
       status: "pending",
       visibility: $("#qa-ask-visibility").value,
@@ -3204,15 +3215,20 @@ async function renderQADetailAsync(main, id) {
 
   const solver = canSolve(CURRENT_USER);
   const isOwner = CURRENT_USER.username === q.username;
+  const isAdmin = CURRENT_USER.role === "admin";
   if (q.visibility === "private" && !solver && !isOwner) {
     main.innerHTML = `<div class="empty"><div class="big">🔒</div>Câu hỏi này ở chế độ riêng tư, bạn không có quyền xem.</div>`;
     return;
   }
   const canChat = solver || isOwner;
+  const canDeleteThread = isOwner || isAdmin;
   const msgs = QA_MESSAGES.filter((m) => m.question_id === id).sort((a, b) => (+a.created_at) - (+b.created_at));
 
   main.innerHTML = `
-    <button class="btn btn-outline btn-sm" id="qa-back" style="margin-bottom:16px">← Quay lại danh sách</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" id="qa-back">← Quay lại danh sách</button>
+      ${canDeleteThread ? `<button class="btn btn-outline btn-sm btn-danger-outline" id="qa-del-thread">🗑️ Xoá câu hỏi này</button>` : ""}
+    </div>
     <div class="qa-detail-card">
       <div class="qa-detail-head">
         <div style="display:flex;align-items:center;gap:10px">
@@ -3226,37 +3242,91 @@ async function renderQADetailAsync(main, id) {
       </div>
       ${q.visibility === "private" ? `<span class="chip chip-pen" style="margin-bottom:12px;display:inline-block">🔒 Riêng tư</span>` : ""}
       ${q.image ? `<img class="qa-detail-image" src="${q.image}" />` : ""}
+      ${q.video ? `<video class="qa-detail-image" src="${q.video}" controls></video>` : ""}
       ${q.text ? `<p class="qa-detail-text">${esc(q.text)}</p>` : ""}
       ${solver ? `<button class="btn btn-outline btn-sm" id="qa-toggle-status">${q.status === "done" ? "↺ Mở lại" : "✓ Đánh dấu đã xong"}</button>` : ""}
     </div>
 
     <div class="comment-list" id="qa-chat-list">
-      ${msgs.length === 0 ? `<p class="hint" style="padding:8px 0">Chưa có tin nhắn nào.</p>` : msgs.map((m) => `
+      ${msgs.length === 0 ? `<p class="hint" style="padding:8px 0">Chưa có tin nhắn nào.</p>` : msgs.map((m) => {
+        const mine = m.username === CURRENT_USER.username;
+        if (m.recalled) {
+          return `
+          <div class="comment-item">
+            ${avatarHtml(m.username, m.name, 32)}
+            <div class="comment-body">
+              <div class="comment-head">
+                <span class="comment-name">${esc(m.name)}</span>
+                <span class="comment-time">${new Date(+m.created_at).toLocaleString("vi-VN")}</span>
+              </div>
+              <div class="comment-text recalled-text">Tin nhắn đã được thu hồi</div>
+            </div>
+          </div>`;
+        }
+        return `
         <div class="comment-item">
           ${avatarHtml(m.username, m.name, 32)}
           <div class="comment-body">
             <div class="comment-head">
               <span class="comment-name">${esc(m.name)}${m.role === "solver" || m.role === "admin" ? ' <span class="badge-solver">GIẢI BÀI</span>' : ""}</span>
               <span class="comment-time">${new Date(+m.created_at).toLocaleString("vi-VN")}</span>
+              ${mine ? `<button class="msg-recall-btn" data-qarecall="${m.id}" title="Thu hồi tin nhắn">🗑️</button>` : ""}
             </div>
             ${m.image ? `<img src="${m.image}" style="max-width:260px;border-radius:8px;margin-top:6px;border:1px solid var(--line)" />` : ""}
+            ${m.video ? `<video src="${m.video}" controls style="max-width:260px;border-radius:8px;margin-top:6px;border:1px solid var(--line)"></video>` : ""}
             ${m.text ? `<div class="comment-text">${esc(m.text)}</div>` : ""}
           </div>
-        </div>`).join("")}
+        </div>`;
+      }).join("")}
     </div>
 
     ${canChat ? `
     <div class="comment-compose" style="margin-top:14px">
       <textarea id="qa-reply-text" rows="2" placeholder="${solver ? "Nhập hướng dẫn / lời giải..." : "Nhắn thêm cho người giải bài..."}"></textarea>
       <div id="qa-reply-preview" style="margin:8px 0"></div>
-      <div style="display:flex;gap:8px;justify-content:space-between;align-items:center">
-        <label class="btn btn-outline btn-sm">📷 Ảnh<input type="file" accept="image/*" id="qa-reply-file" class="hidden" /></label>
+      <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap">
+        <div style="display:flex;gap:8px">
+          <label class="btn btn-outline btn-sm">📷 Ảnh<input type="file" accept="image/*" id="qa-reply-file" class="hidden" /></label>
+          <label class="btn btn-outline btn-sm">🎥 Video<input type="file" accept="video/*" id="qa-reply-vfile" class="hidden" /></label>
+        </div>
         <button class="btn btn-primary btn-sm" id="qa-reply-send">Gửi</button>
       </div>
     </div>` : `<p class="hint" style="margin-top:14px">Chỉ người hỏi và người giải bài mới có thể nhắn trong đây.</p>`}
   `;
 
   $("#qa-back").addEventListener("click", () => go("qa"));
+
+  if (canDeleteThread) {
+    $("#qa-del-thread").addEventListener("click", () => {
+      confirmModal("Xoá câu hỏi này?", "Toàn bộ câu hỏi và các tin nhắn trong đó sẽ bị xoá vĩnh viễn cho mọi người. Không thể hoàn tác.", async () => {
+        try {
+          const ids = QA_MESSAGES.filter((m) => m.question_id === id).map((m) => m.id);
+          await DBX.removeMany("qa_messages", "id", ids);
+          await DBX.remove("qa_questions", "id", id);
+          QA_MESSAGES = QA_MESSAGES.filter((m) => m.question_id !== id);
+          QA_QUESTIONS = QA_QUESTIONS.filter((x) => x.id !== id);
+          toast("Đã xoá câu hỏi");
+          go("qa");
+        } catch (e) { toast("Không xoá được: " + e.message, true); }
+      });
+    });
+  }
+
+  $$("[data-qarecall]", main).forEach((b) => b.addEventListener("click", () => {
+    const mid = b.dataset.qarecall;
+    confirmModal("Thu hồi tin nhắn?", "Nội dung tin nhắn sẽ bị xoá và hiện thông báo đã thu hồi cho mọi người.", async () => {
+      const m = QA_MESSAGES.find((x) => x.id === mid);
+      if (!m) return;
+      const updated = { ...m, text: "", image: "", video: "", recalled: true };
+      try {
+        await DBX.remove("qa_messages", "id", mid);
+        await DBX.insert("qa_messages", updated);
+        const idx = QA_MESSAGES.findIndex((x) => x.id === mid);
+        if (idx > -1) QA_MESSAGES[idx] = updated;
+        renderQADetail(main, id);
+      } catch (e) { toast("Không thu hồi được: " + e.message, true); }
+    });
+  }));
 
   if (solver) {
     $("#qa-toggle-status").addEventListener("click", async () => {
@@ -3274,6 +3344,7 @@ async function renderQADetailAsync(main, id) {
 
   if (canChat) {
     let pendingImage = null;
+    let pendingVideo = null;
     $("#qa-reply-file").addEventListener("change", (e) => {
       const f = e.target.files[0];
       if (!f) return;
@@ -3282,9 +3353,17 @@ async function renderQADetailAsync(main, id) {
         $("#qa-reply-preview").innerHTML = dataUrl ? `<img src="${dataUrl}" style="max-width:200px;border-radius:8px;border:1px solid var(--line)" />` : "";
       });
     });
+    $("#qa-reply-vfile").addEventListener("change", (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      readVideoFile(f, (dataUrl) => {
+        pendingVideo = dataUrl;
+        $("#qa-reply-preview").innerHTML = dataUrl ? `<video src="${dataUrl}" controls style="max-width:200px;border-radius:8px;border:1px solid var(--line)"></video>` : "";
+      });
+    });
     $("#qa-reply-send").addEventListener("click", async () => {
       const text = $("#qa-reply-text").value.trim();
-      if (!text && !pendingImage) return;
+      if (!text && !pendingImage && !pendingVideo) return;
       const btn = $("#qa-reply-send");
       btn.disabled = true;
       const row = {
@@ -3295,6 +3374,7 @@ async function renderQADetailAsync(main, id) {
         role: CURRENT_USER.role || "user",
         text,
         image: pendingImage || "",
+        video: pendingVideo || "",
         created_at: Date.now(),
       };
       try {
@@ -3320,6 +3400,11 @@ function markDmSeen(otherUsername) {
   const map = getDmSeenMap();
   map[otherUsername] = Date.now();
   localStorage.setItem(dmSeenKey(), JSON.stringify(map));
+}
+
+function isUserOnline(username) {
+  const p = PRESENCE.find((x) => x.username === username);
+  return !!p && Date.now() - (+p.last_active) < 3 * 60000;
 }
 
 /* Nhóm tin nhắn theo "người còn lại" trong cuộc trò chuyện, lấy tin mới nhất mỗi nhóm */
@@ -3370,7 +3455,7 @@ async function renderMessagesAsync(main) {
           const u = USERS.find((x) => x.username === c.other);
           const name = u ? u.name : c.other;
           const mine = c.last.from_username === CURRENT_USER.username;
-          const preview = c.last.image && !c.last.text ? "📷 Hình ảnh" : (c.last.text || "");
+          const preview = c.last.recalled ? "Tin nhắn đã được thu hồi" : c.last.video && !c.last.text ? "🎥 Video" : c.last.image && !c.last.text ? "📷 Hình ảnh" : (c.last.text || "");
           return `
           <div class="qa-card" data-dmopen="${esc(c.other)}">
             ${avatarHtml(c.other, name, 46)}
@@ -3433,7 +3518,7 @@ function openNewMessageModal() {
 
 function renderMessageDetail(main, otherUsername) { renderMessageDetailAsync(main, otherUsername); }
 async function renderMessageDetailAsync(main, otherUsername) {
-  await syncView(main, ["dm_messages"]);
+  await syncView(main, ["dm_messages", "presence"]);
   if (VIEW !== "messagedetail") return;
   const u = USERS.find((x) => x.username === otherUsername);
   if (!u) { main.innerHTML = `<div class="empty"><div class="big">🚫</div>Không tìm thấy tài khoản này.</div>`; return; }
@@ -3444,43 +3529,92 @@ async function renderMessageDetailAsync(main, otherUsername) {
     (m.from_username === otherUsername && m.to_username === me)
   ).sort((a, b) => (+a.created_at) - (+b.created_at));
 
-  main.innerHTML = `
-    <button class="btn btn-outline btn-sm" id="dm-back" style="margin-bottom:16px">← Quay lại danh sách</button>
-    <div class="qa-detail-card" style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-      ${avatarHtml(u.username, u.name, 40)}
-      <div>
-        <div class="qa-card-name">${esc(u.name)}${u.role === "admin" ? ' <span class="badge-admin">ADMIN</span>' : u.role === "solver" ? ' <span class="badge-solver">GIẢI BÀI</span>' : ""}</div>
-        <div class="qa-card-meta">@${esc(u.username)}</div>
-      </div>
-    </div>
+  const online = isUserOnline(otherUsername);
+  const GROUP_GAP = 5 * 60000;   // gộp bong bóng nếu cách nhau < 5 phút, cùng người gửi
+  const DIVIDER_GAP = 30 * 60000; // hiện mốc thời gian nếu cách nhau > 30 phút
 
-    <div class="comment-list" id="dm-thread">
-      ${msgs.length === 0 ? `<p class="hint" style="padding:8px 0">Chưa có tin nhắn nào — gửi lời chào đầu tiên nhé!</p>` : msgs.map((m) => {
-        const mine = m.from_username === me;
-        return `
-        <div class="dm-bubble-row ${mine ? "mine" : ""}">
-          ${!mine ? avatarHtml(m.from_username, u.name, 28) : ""}
-          <div class="dm-bubble">
-            ${m.image ? `<img src="${m.image}" style="max-width:220px;border-radius:8px;display:block;${m.text ? "margin-bottom:6px" : ""}" />` : ""}
-            ${m.text ? `<div class="dm-bubble-text">${esc(m.text)}</div>` : ""}
-            <div class="dm-bubble-time">${new Date(+m.created_at).toLocaleString("vi-VN")}</div>
+  const fmtDivider = (ts) => {
+    const d = new Date(+ts), now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    const y = new Date(now); y.setDate(now.getDate() - 1);
+    const yday = d.toDateString() === y.toDateString();
+    const time = d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+    if (sameDay) return "Hôm nay " + time;
+    if (yday) return "Hôm qua " + time;
+    return d.toLocaleDateString("vi-VN") + " " + time;
+  };
+
+  let bubblesHtml = "";
+  msgs.forEach((m, i) => {
+    const prev = msgs[i - 1], next = msgs[i + 1];
+    const mine = m.from_username === me;
+    if (!prev || (+m.created_at) - (+prev.created_at) > DIVIDER_GAP) {
+      bubblesHtml += `<div class="dm-divider">${fmtDivider(m.created_at)}</div>`;
+    }
+    const startGroup = !prev || prev.from_username !== m.from_username || (+m.created_at) - (+prev.created_at) > GROUP_GAP;
+    const endGroup = !next || next.from_username !== m.from_username || (+next.created_at) - (+m.created_at) > GROUP_GAP;
+    const showAvatar = !mine && endGroup;
+    const showTime = endGroup;
+
+    if (m.recalled) {
+      bubblesHtml += `
+        <div class="dm-bubble-row ${mine ? "mine" : ""} ${startGroup ? "group-start" : ""} ${endGroup ? "group-end" : ""}">
+          <div class="dm-avatar-slot">${showAvatar ? avatarHtml(m.from_username, u.name, 26) : ""}</div>
+          <div class="dm-bubble dm-bubble-recalled">
+            <div class="dm-bubble-text recalled-text">Tin nhắn đã được thu hồi</div>
           </div>
         </div>`;
-      }).join("")}
-    </div>
+      return;
+    }
+    bubblesHtml += `
+      <div class="dm-bubble-row ${mine ? "mine" : ""} ${startGroup ? "group-start" : ""} ${endGroup ? "group-end" : ""}">
+        <div class="dm-avatar-slot">${showAvatar ? avatarHtml(m.from_username, u.name, 26) : ""}</div>
+        <div class="dm-bubble ${m.text && !m.image && !m.video ? "dm-bubble-text-only" : "dm-bubble-media"}">
+          ${mine ? `<button class="dm-recall-btn" data-dmrecall="${m.id}" title="Thu hồi tin nhắn">⋯</button>` : ""}
+          ${m.image ? `<img src="${m.image}" class="dm-media" />` : ""}
+          ${m.video ? `<video src="${m.video}" controls class="dm-media"></video>` : ""}
+          ${m.text ? `<div class="dm-bubble-text">${esc(m.text)}</div>` : ""}
+        </div>
+      </div>
+      ${showTime ? `<div class="dm-time-stamp ${mine ? "mine" : ""}">${new Date(+m.created_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}</div>` : ""}
+    `;
+  });
 
-    <div class="comment-compose" style="margin-top:14px;position:relative">
-      <textarea id="dm-text" rows="2" placeholder="Nhập tin nhắn..."></textarea>
-      <div id="dm-preview" style="margin:8px 0"></div>
-      <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;position:relative">
-        <div style="display:flex;gap:8px">
-          <label class="btn btn-outline btn-sm">📷 Ảnh<input type="file" accept="image/*" id="dm-file" class="hidden" /></label>
-          <button class="btn btn-outline btn-sm" id="dm-emoji-btn" type="button">😀 Emoji</button>
-          <div id="dm-emoji-pop" class="dm-emoji-pop hidden">
-            ${DM_EMOJIS.map((e) => `<button type="button" class="dm-emoji-item" data-emoji="${e}">${e}</button>`).join("")}
+  main.innerHTML = `
+    <div class="dm-chatcard">
+      <div class="dm-header">
+        <button class="dm-icon-btn" id="dm-back" title="Quay lại">←</button>
+        <div class="dm-header-user">
+          <div class="dm-avatar-online">
+            ${avatarHtml(u.username, u.name, 40)}
+            ${online ? `<span class="dm-online-dot"></span>` : ""}
+          </div>
+          <div>
+            <div class="qa-card-name">${esc(u.name)}${u.role === "admin" ? ' <span class="badge-admin">ADMIN</span>' : u.role === "solver" ? ' <span class="badge-solver">GIẢI BÀI</span>' : ""}</div>
+            <div class="dm-status">${online ? '<span class="dm-status-dot"></span> Đang hoạt động' : "Ngoại tuyến"}</div>
           </div>
         </div>
-        <button class="btn btn-primary btn-sm" id="dm-send">Gửi</button>
+        <button class="dm-icon-btn" id="dm-del-conv" title="Xoá cuộc trò chuyện">🗑️</button>
+      </div>
+
+      <div class="dm-thread" id="dm-thread">
+        ${msgs.length === 0 ? `<p class="hint" style="padding:16px 0;text-align:center">Chưa có tin nhắn nào — gửi lời chào đầu tiên nhé! 👋</p>` : bubblesHtml}
+      </div>
+
+      <div class="dm-compose">
+        <div id="dm-preview"></div>
+        <div class="dm-compose-row">
+          <label class="dm-icon-btn dm-icon-btn-sm" title="Gửi ảnh">📷<input type="file" accept="image/*" id="dm-file" class="hidden" /></label>
+          <label class="dm-icon-btn dm-icon-btn-sm" title="Gửi video">🎥<input type="file" accept="video/*" id="dm-vfile" class="hidden" /></label>
+          <div class="dm-input-pill">
+            <input type="text" id="dm-text" placeholder="Aa" autocomplete="off" />
+            <button class="dm-icon-btn dm-icon-btn-sm" id="dm-emoji-btn" type="button" title="Emoji">😀</button>
+            <div id="dm-emoji-pop" class="dm-emoji-pop hidden">
+              ${DM_EMOJIS.map((e) => `<button type="button" class="dm-emoji-item" data-emoji="${e}">${e}</button>`).join("")}
+            </div>
+          </div>
+          <button class="dm-send-btn" id="dm-send" title="Gửi">👍</button>
+        </div>
       </div>
     </div>
   `;
@@ -3492,13 +3626,63 @@ async function renderMessageDetailAsync(main, otherUsername) {
 
   $("#dm-back").addEventListener("click", () => go("messages"));
 
+  $("#dm-del-conv").addEventListener("click", () => {
+    confirmModal("Xoá cuộc trò chuyện?", "Toàn bộ tin nhắn giữa bạn và " + u.name + " sẽ bị xoá vĩnh viễn cho cả hai bên. Không thể hoàn tác.", async () => {
+      try {
+        const ids = msgs.map((m) => m.id);
+        await DBX.removeMany("dm_messages", "id", ids);
+        DM_MESSAGES = DM_MESSAGES.filter((m) => !ids.includes(m.id));
+        toast("Đã xoá cuộc trò chuyện");
+        go("messages");
+      } catch (e) { toast("Không xoá được: " + e.message, true); }
+    });
+  });
+
+  $$("[data-dmrecall]", main).forEach((b) => b.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const mid = b.dataset.dmrecall;
+    confirmModal("Thu hồi tin nhắn?", "Nội dung tin nhắn sẽ bị xoá và hiện thông báo đã thu hồi cho " + u.name + ".", async () => {
+      const m = DM_MESSAGES.find((x) => x.id === mid);
+      if (!m) return;
+      const updated = { ...m, text: "", image: "", video: "", recalled: true };
+      try {
+        await DBX.remove("dm_messages", "id", mid);
+        await DBX.insert("dm_messages", updated);
+        const idx = DM_MESSAGES.findIndex((x) => x.id === mid);
+        if (idx > -1) DM_MESSAGES[idx] = updated;
+        renderMessageDetail(main, otherUsername);
+      } catch (e) { toast("Không thu hồi được: " + e.message, true); }
+    });
+  }));
+
   let pendingImage = null;
+  let pendingVideo = null;
+  const updateSendBtn = () => {
+    const hasContent = $("#dm-text").value.trim() || pendingImage || pendingVideo;
+    $("#dm-send").textContent = hasContent ? "➤" : "👍";
+    $("#dm-send").classList.toggle("active", !!hasContent);
+  };
+  $("#dm-text").addEventListener("input", updateSendBtn);
+  $("#dm-text").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#dm-send").click(); } });
+
   $("#dm-file").addEventListener("change", (e) => {
     const f = e.target.files[0];
     if (!f) return;
     compressImageFile(f, (dataUrl) => {
       pendingImage = dataUrl;
-      $("#dm-preview").innerHTML = dataUrl ? `<img src="${dataUrl}" style="max-width:180px;border-radius:8px;border:1px solid var(--line)" />` : "";
+      $("#dm-preview").innerHTML = dataUrl ? `<div class="dm-preview-item"><img src="${dataUrl}" /><button type="button" id="dm-preview-clear">✕</button></div>` : "";
+      if (dataUrl) $("#dm-preview-clear").addEventListener("click", () => { pendingImage = null; $("#dm-preview").innerHTML = ""; updateSendBtn(); });
+      updateSendBtn();
+    });
+  });
+  $("#dm-vfile").addEventListener("change", (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    readVideoFile(f, (dataUrl) => {
+      pendingVideo = dataUrl;
+      $("#dm-preview").innerHTML = dataUrl ? `<div class="dm-preview-item"><video src="${dataUrl}" controls></video><button type="button" id="dm-preview-clear">✕</button></div>` : "";
+      if (dataUrl) $("#dm-preview-clear").addEventListener("click", () => { pendingVideo = null; $("#dm-preview").innerHTML = ""; updateSendBtn(); });
+      updateSendBtn();
     });
   });
 
@@ -3509,6 +3693,7 @@ async function renderMessageDetailAsync(main, otherUsername) {
     const ta = $("#dm-text");
     ta.value += b.dataset.emoji;
     ta.focus();
+    updateSendBtn();
   }));
   document.addEventListener("click", function outsideClose(e) {
     if (!emojiPop.contains(e.target) && e.target !== emojiBtn) emojiPop.classList.add("hidden");
@@ -3516,10 +3701,11 @@ async function renderMessageDetailAsync(main, otherUsername) {
   });
 
   $("#dm-send").addEventListener("click", async () => {
-    const text = $("#dm-text").value.trim();
-    if (!text && !pendingImage) return;
+    const textEl = $("#dm-text");
+    const text = textEl.value.trim() || (!pendingImage && !pendingVideo ? "👍" : "");
+    if (!text && !pendingImage && !pendingVideo) return;
     const btn = $("#dm-send");
-    btn.disabled = true; btn.textContent = "Đang gửi…";
+    btn.disabled = true;
     const row = {
       id: "dm_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
       from_username: me,
@@ -3528,6 +3714,7 @@ async function renderMessageDetailAsync(main, otherUsername) {
       to_name: u.name,
       text,
       image: pendingImage || "",
+      video: pendingVideo || "",
       created_at: Date.now(),
     };
     try {
@@ -3535,7 +3722,7 @@ async function renderMessageDetailAsync(main, otherUsername) {
       DM_MESSAGES.push(row);
       renderMessageDetail(main, otherUsername);
     } catch (e) {
-      btn.disabled = false; btn.textContent = "Gửi";
+      btn.disabled = false;
       toast("Không gửi được: " + e.message + " — kiểm tra đã tạo bảng dm_messages chưa", true);
     }
   });
@@ -3652,6 +3839,21 @@ function compressImageFile(file, cb, maxW) {
     img.onerror = () => cb(null);
     img.src = reader.result;
   };
+  reader.readAsDataURL(file);
+}
+
+/* Đọc file video thành base64 (không nén được ở phía trình duyệt) — giới hạn dung lượng để tránh treo máy/hết quota. */
+function readVideoFile(file, cb) {
+  const MAX_BYTES = 20 * 1024 * 1024; // 20MB
+  if (!file.type.startsWith("video/")) { toast("File này không phải video.", true); cb(null); return; }
+  if (file.size > MAX_BYTES) {
+    toast("Video quá lớn (tối đa 20MB) — hãy chọn video ngắn hơn hoặc nén trước khi gửi.", true);
+    cb(null);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => cb(reader.result);
+  reader.onerror = () => { cb(null); toast("Không đọc được video, thử lại nhé.", true); };
   reader.readAsDataURL(file);
 }
 
