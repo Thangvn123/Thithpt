@@ -6,6 +6,7 @@
 let USERS = [], EXAMS = [], LESSONS = [], RESULTS = [], PROGRESS = [], NOTICES = [], COMMENTS = [], REPORTS = [], CHAPTER_ORDER = [], CHAPTER_LOCKS = {};
 let PRESENCE = [];
 let QA_QUESTIONS = [], QA_MESSAGES = [];
+let DM_MESSAGES = [];
 let CURRENT_USER = null;
 let VIEW = "exams";
 let TAKING = null;         // đề đang làm
@@ -78,6 +79,8 @@ async function loadAllTables() {
   catch (err) { QA_MESSAGES = []; console.warn("Chưa có bảng qa_messages (chạy SQL bổ sung để bật chat Hỏi bài):", err.message); }
   try { PRESENCE = await DBX.list("presence", "last_active"); }
   catch (err) { PRESENCE = []; console.warn("Chưa có bảng presence (chạy SQL bổ sung để bật hiện thị học sinh đang online):", err.message); }
+  try { DM_MESSAGES = await DBX.list("dm_messages"); }
+  catch (err) { DM_MESSAGES = []; console.warn("Chưa có bảng dm_messages (chạy SQL bổ sung để bật Nhắn tin riêng):", err.message); }
   try {
     const rows = await DBX.list("settings");
     const orderRow = rows.find((r) => r.key === "chapter_order");
@@ -128,6 +131,7 @@ async function sync(...tables) {
       else if (t === "qa_questions") QA_QUESTIONS = rows;
       else if (t === "qa_messages") QA_MESSAGES = rows;
       else if (t === "presence") PRESENCE = rows;
+      else if (t === "dm_messages") DM_MESSAGES = rows;
       else if (t === "settings") {
         const orderRow = rows.find((r) => r.key === "chapter_order");
         CHAPTER_ORDER = (orderRow && orderRow.value) || [];
@@ -138,6 +142,7 @@ async function sync(...tables) {
   }
   updateNotifBadge();
   updateQABadge();
+  updateDmBadge();
   verifySession();
 }
 
@@ -377,6 +382,7 @@ function login(u, restore) {
   $$(".admin-only").forEach((el) => el.classList.toggle("hidden", u.role !== "admin"));
   if (!localStorage.getItem(seenKey())) markSeen(); // lần đầu đăng nhập trên máy: không dồn thông báo cũ
   updateNotifBadge();
+  updateDmBadge();
   go("exams");
   startSessionWatch();
 
@@ -421,7 +427,7 @@ function startSessionWatch() {
   if (!DBX.remote) return;
   sendHeartbeat();
   SESS_TIMER = setInterval(() => {
-    sync("users", "exams", "lessons", "notices", "comments", "question_reports", "qa_questions", "qa_messages", "presence");
+    sync("users", "exams", "lessons", "notices", "comments", "question_reports", "qa_questions", "qa_messages", "presence", "dm_messages");
     sendHeartbeat();
   }, 60000); // mỗi phút kiểm tra phiên + thông báo mới + báo còn đang online
 }
@@ -494,6 +500,8 @@ function go(view, payload) {
   else if (view === "result") renderResult(main);
   else if (view === "qa") renderQA(main);
   else if (view === "qadetail") renderQADetail(main, payload);
+  else if (view === "messages") renderMessages(main);
+  else if (view === "messagedetail") renderMessageDetail(main, payload);
   else if (view === "profile") renderProfile(main);
 }
 
@@ -3299,6 +3307,238 @@ async function renderQADetailAsync(main, id) {
       }
     });
   }
+}
+
+/* =====================================================
+   NHẮN TIN RIÊNG (chat 1-1 giữa 2 tài khoản bất kỳ)
+===================================================== */
+const DM_EMOJIS = ["😀","😂","😍","😊","😉","😢","😭","😡","👍","👎","🙏","👏","🎉","❤️","🔥","✅","❌","💬","😴","🤔","😎","🥳","😱","🙌","💪","📚","✏️","⏰","🌟","💡"];
+
+function dmSeenKey() { return "ptt_dmseen_" + (CURRENT_USER ? CURRENT_USER.username : ""); }
+function getDmSeenMap() { try { return JSON.parse(localStorage.getItem(dmSeenKey()) || "{}"); } catch (e) { return {}; } }
+function markDmSeen(otherUsername) {
+  const map = getDmSeenMap();
+  map[otherUsername] = Date.now();
+  localStorage.setItem(dmSeenKey(), JSON.stringify(map));
+}
+
+/* Nhóm tin nhắn theo "người còn lại" trong cuộc trò chuyện, lấy tin mới nhất mỗi nhóm */
+function getDmConversations() {
+  if (!CURRENT_USER) return [];
+  const me = CURRENT_USER.username;
+  const byOther = {};
+  for (const m of DM_MESSAGES) {
+    if (m.from_username !== me && m.to_username !== me) continue;
+    const other = m.from_username === me ? m.to_username : m.from_username;
+    if (!byOther[other] || (+m.created_at) > (+byOther[other].created_at)) byOther[other] = m;
+  }
+  const seen = getDmSeenMap();
+  return Object.keys(byOther).map((other) => {
+    const last = byOther[other];
+    const lastSeenAt = seen[other] || 0;
+    const unread = DM_MESSAGES.filter((m) => m.from_username === other && m.to_username === me && (+m.created_at) > lastSeenAt).length;
+    return { other, last, unread };
+  }).sort((a, b) => (+b.last.created_at) - (+a.last.created_at));
+}
+
+function updateDmBadge() {
+  const badge = $("#dm-badge");
+  if (!badge || !CURRENT_USER) return;
+  const n = getDmConversations().reduce((sum, c) => sum + c.unread, 0);
+  badge.textContent = n > 9 ? "9+" : n;
+  badge.classList.toggle("hidden", n === 0);
+}
+
+function renderMessages(main) { renderMessagesAsync(main); }
+async function renderMessagesAsync(main) {
+  await syncView(main, ["dm_messages"]);
+  if (VIEW !== "messages") return;
+  const convs = getDmConversations();
+
+  main.innerHTML = `
+    <div class="page-head">
+      <div>
+        <h2 class="page-title">Nhắn tin</h2>
+        <p class="page-sub">Nhắn tin riêng với bất kỳ ai — học sinh khác hoặc người giải bài / admin.</p>
+      </div>
+      <button class="btn btn-primary" id="dm-new-btn">+ Tin nhắn mới</button>
+    </div>
+
+    ${convs.length === 0 ? `<div class="empty"><div class="big">✉️</div>Chưa có cuộc trò chuyện nào — bấm "Tin nhắn mới" để bắt đầu.</div>` : `
+      <div class="qa-list" id="dm-conv-list">
+        ${convs.map((c) => {
+          const u = USERS.find((x) => x.username === c.other);
+          const name = u ? u.name : c.other;
+          const mine = c.last.from_username === CURRENT_USER.username;
+          const preview = c.last.image && !c.last.text ? "📷 Hình ảnh" : (c.last.text || "");
+          return `
+          <div class="qa-card" data-dmopen="${esc(c.other)}">
+            ${avatarHtml(c.other, name, 46)}
+            <div class="qa-card-body">
+              <div class="qa-card-head">
+                <span class="qa-card-name">${esc(name)}</span>
+                ${c.unread > 0 ? `<span class="chip chip-pen">${c.unread > 9 ? "9+" : c.unread} mới</span>` : ""}
+              </div>
+              <div class="qa-card-text">${mine ? "Bạn: " : ""}${esc(preview.slice(0, 100))}${preview.length > 100 ? "…" : ""}</div>
+              <div class="qa-card-meta">${new Date(+c.last.created_at).toLocaleString("vi-VN")}</div>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>`}
+  `;
+
+  $$("[data-dmopen]", main).forEach((b) => b.addEventListener("click", () => go("messagedetail", b.dataset.dmopen)));
+  $("#dm-new-btn").addEventListener("click", () => openNewMessageModal());
+  updateDmBadge();
+}
+
+function openNewMessageModal() {
+  const others = USERS.filter((u) => u.username !== CURRENT_USER.username);
+  $("#modal-root").innerHTML = `
+    <div class="modal-overlay" id="dm-new-overlay">
+      <div class="modal">
+        <h3>✉️ Tin nhắn mới</h3>
+        <div class="field">
+          <label>Chọn người nhận</label>
+          <input type="text" id="dm-new-search" placeholder="Tìm theo tên hoặc tài khoản..." />
+        </div>
+        <div id="dm-new-list" style="max-height:320px;overflow:auto;display:flex;flex-direction:column;gap:6px"></div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" id="dm-new-cancel">Huỷ</button>
+        </div>
+      </div>
+    </div>`;
+  $("#dm-new-overlay").addEventListener("click", (e) => { if (e.target.id === "dm-new-overlay") $("#modal-root").innerHTML = ""; });
+  $("#dm-new-cancel").addEventListener("click", () => { $("#modal-root").innerHTML = ""; });
+
+  const listEl = $("#dm-new-list");
+  const draw = (filter) => {
+    const f = (filter || "").trim().toLowerCase();
+    const items = others.filter((u) => !f || u.name.toLowerCase().includes(f) || u.username.toLowerCase().includes(f));
+    listEl.innerHTML = items.length === 0 ? `<p class="hint">Không tìm thấy tài khoản nào.</p>` : items.map((u) => `
+      <button class="qa-card" style="padding:9px 12px" data-dmpick="${esc(u.username)}">
+        ${avatarHtml(u.username, u.name, 34)}
+        <div class="qa-card-body">
+          <div class="qa-card-name">${esc(u.name)}${u.role === "admin" ? ' <span class="badge-admin">ADMIN</span>' : u.role === "solver" ? ' <span class="badge-solver">GIẢI BÀI</span>' : ""}</div>
+        </div>
+      </button>`).join("");
+    $$("[data-dmpick]", listEl).forEach((b) => b.addEventListener("click", () => {
+      $("#modal-root").innerHTML = "";
+      go("messagedetail", b.dataset.dmpick);
+    }));
+  };
+  draw("");
+  $("#dm-new-search").addEventListener("input", (e) => draw(e.target.value));
+}
+
+function renderMessageDetail(main, otherUsername) { renderMessageDetailAsync(main, otherUsername); }
+async function renderMessageDetailAsync(main, otherUsername) {
+  await syncView(main, ["dm_messages"]);
+  if (VIEW !== "messagedetail") return;
+  const u = USERS.find((x) => x.username === otherUsername);
+  if (!u) { main.innerHTML = `<div class="empty"><div class="big">🚫</div>Không tìm thấy tài khoản này.</div>`; return; }
+
+  const me = CURRENT_USER.username;
+  const msgs = DM_MESSAGES.filter((m) =>
+    (m.from_username === me && m.to_username === otherUsername) ||
+    (m.from_username === otherUsername && m.to_username === me)
+  ).sort((a, b) => (+a.created_at) - (+b.created_at));
+
+  main.innerHTML = `
+    <button class="btn btn-outline btn-sm" id="dm-back" style="margin-bottom:16px">← Quay lại danh sách</button>
+    <div class="qa-detail-card" style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      ${avatarHtml(u.username, u.name, 40)}
+      <div>
+        <div class="qa-card-name">${esc(u.name)}${u.role === "admin" ? ' <span class="badge-admin">ADMIN</span>' : u.role === "solver" ? ' <span class="badge-solver">GIẢI BÀI</span>' : ""}</div>
+        <div class="qa-card-meta">@${esc(u.username)}</div>
+      </div>
+    </div>
+
+    <div class="comment-list" id="dm-thread">
+      ${msgs.length === 0 ? `<p class="hint" style="padding:8px 0">Chưa có tin nhắn nào — gửi lời chào đầu tiên nhé!</p>` : msgs.map((m) => {
+        const mine = m.from_username === me;
+        return `
+        <div class="dm-bubble-row ${mine ? "mine" : ""}">
+          ${!mine ? avatarHtml(m.from_username, u.name, 28) : ""}
+          <div class="dm-bubble">
+            ${m.image ? `<img src="${m.image}" style="max-width:220px;border-radius:8px;display:block;${m.text ? "margin-bottom:6px" : ""}" />` : ""}
+            ${m.text ? `<div class="dm-bubble-text">${esc(m.text)}</div>` : ""}
+            <div class="dm-bubble-time">${new Date(+m.created_at).toLocaleString("vi-VN")}</div>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>
+
+    <div class="comment-compose" style="margin-top:14px;position:relative">
+      <textarea id="dm-text" rows="2" placeholder="Nhập tin nhắn..."></textarea>
+      <div id="dm-preview" style="margin:8px 0"></div>
+      <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;position:relative">
+        <div style="display:flex;gap:8px">
+          <label class="btn btn-outline btn-sm">📷 Ảnh<input type="file" accept="image/*" id="dm-file" class="hidden" /></label>
+          <button class="btn btn-outline btn-sm" id="dm-emoji-btn" type="button">😀 Emoji</button>
+          <div id="dm-emoji-pop" class="dm-emoji-pop hidden">
+            ${DM_EMOJIS.map((e) => `<button type="button" class="dm-emoji-item" data-emoji="${e}">${e}</button>`).join("")}
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="dm-send">Gửi</button>
+      </div>
+    </div>
+  `;
+
+  markDmSeen(otherUsername);
+  updateDmBadge();
+  const thread = $("#dm-thread");
+  thread.scrollTop = thread.scrollHeight;
+
+  $("#dm-back").addEventListener("click", () => go("messages"));
+
+  let pendingImage = null;
+  $("#dm-file").addEventListener("change", (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    compressImageFile(f, (dataUrl) => {
+      pendingImage = dataUrl;
+      $("#dm-preview").innerHTML = dataUrl ? `<img src="${dataUrl}" style="max-width:180px;border-radius:8px;border:1px solid var(--line)" />` : "";
+    });
+  });
+
+  const emojiBtn = $("#dm-emoji-btn");
+  const emojiPop = $("#dm-emoji-pop");
+  emojiBtn.addEventListener("click", () => emojiPop.classList.toggle("hidden"));
+  $$("[data-emoji]", emojiPop).forEach((b) => b.addEventListener("click", () => {
+    const ta = $("#dm-text");
+    ta.value += b.dataset.emoji;
+    ta.focus();
+  }));
+  document.addEventListener("click", function outsideClose(e) {
+    if (!emojiPop.contains(e.target) && e.target !== emojiBtn) emojiPop.classList.add("hidden");
+    if (!document.body.contains(emojiBtn)) document.removeEventListener("click", outsideClose);
+  });
+
+  $("#dm-send").addEventListener("click", async () => {
+    const text = $("#dm-text").value.trim();
+    if (!text && !pendingImage) return;
+    const btn = $("#dm-send");
+    btn.disabled = true; btn.textContent = "Đang gửi…";
+    const row = {
+      id: "dm_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
+      from_username: me,
+      from_name: CURRENT_USER.name,
+      to_username: otherUsername,
+      to_name: u.name,
+      text,
+      image: pendingImage || "",
+      created_at: Date.now(),
+    };
+    try {
+      await DBX.insert("dm_messages", row);
+      DM_MESSAGES.push(row);
+      renderMessageDetail(main, otherUsername);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = "Gửi";
+      toast("Không gửi được: " + e.message + " — kiểm tra đã tạo bảng dm_messages chưa", true);
+    }
+  });
 }
 
 /* =====================================================
