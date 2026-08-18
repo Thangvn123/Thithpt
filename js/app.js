@@ -522,6 +522,11 @@ async function renderExamsAsync(main) {
     .filter((p) => Date.now() - (+p.last_active) < 3 * 60000)
     .sort((a, b) => (+b.last_active) - (+a.last_active));
 
+  const myResults = RESULTS.filter((r) => r.username === CURRENT_USER.username);
+  const myAvgScore = myResults.length ? (myResults.reduce((s, r) => s + r.score10, 0) / myResults.length) : null;
+  const myAccuracy = myResults.length ? (myResults.reduce((s, r) => s + (r.maxRaw ? r.raw / r.maxRaw : 0), 0) / myResults.length * 100) : null;
+  const myExamsDone = new Set(myResults.map((r) => r.examId)).size;
+
   main.innerHTML = `
     <div class="hero">
       <p class="hero-eyebrow">KỲ THI THỬ TỐT NGHIỆP THPT</p>
@@ -536,7 +541,17 @@ async function renderExamsAsync(main) {
       <div class="countdown-box" id="exam-countdown">
         <p class="countdown-label">⏳ Còn lại đến kỳ thi tốt nghiệp THPT 2027 <span style="opacity:.75">(dự kiến 12/06/2027)</span></p>
         <div class="countdown-numbers" id="countdown-numbers"></div>
+        <div class="cd-progress-wrap">
+          <div class="cd-progress-label"><span>Tiến trình năm học</span><span id="cd-progress-pct">0%</span></div>
+          <div class="cd-progress-track"><div class="cd-progress-fill" id="cd-progress-fill" style="width:0%"></div></div>
+        </div>
       </div>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-card-icon">🎯</div><div><div class="stat-card-num">${myAvgScore != null ? myAvgScore.toFixed(2) : "—"}</div><div class="stat-card-label">Điểm trung bình</div></div></div>
+      <div class="stat-card"><div class="stat-card-icon">📘</div><div><div class="stat-card-num">${myExamsDone}</div><div class="stat-card-label">Số đề đã giải</div></div></div>
+      <div class="stat-card"><div class="stat-card-icon">✅</div><div><div class="stat-card-num">${myAccuracy != null ? myAccuracy.toFixed(0) + "%" : "—"}</div><div class="stat-card-label">Tỉ lệ chính xác</div></div></div>
     </div>
 
     ${onlineUsers.length ? `
@@ -602,11 +617,23 @@ async function renderExamsAsync(main) {
 
 /* Đồng hồ đếm ngược tới kỳ thi tốt nghiệp THPT 2027 (dự kiến 12/06/2027 theo Bộ GD&ĐT) */
 let COUNTDOWN_TIMER = null;
+const SCHOOL_YEAR_START = new Date("2026-09-05T00:00:00+07:00").getTime();
 function updateExamCountdown() {
   const el = $("#countdown-numbers");
   if (!el) { clearInterval(COUNTDOWN_TIMER); COUNTDOWN_TIMER = null; return; }
   const target = new Date("2027-06-12T00:00:00+07:00").getTime();
-  const diff = target - Date.now();
+  const now = Date.now();
+  const diff = target - now;
+
+  const pctEl = $("#cd-progress-pct"), fillEl = $("#cd-progress-fill");
+  if (pctEl && fillEl) {
+    const total = target - SCHOOL_YEAR_START;
+    const elapsed = now - SCHOOL_YEAR_START;
+    const pct = Math.max(0, Math.min(100, (elapsed / total) * 100));
+    pctEl.textContent = pct.toFixed(1) + "%";
+    fillEl.style.width = pct + "%";
+  }
+
   if (diff <= 0) {
     el.innerHTML = `<div class="cd-done">🎉 Chúc các em thi tốt!</div>`;
     clearInterval(COUNTDOWN_TIMER); COUNTDOWN_TIMER = null;
