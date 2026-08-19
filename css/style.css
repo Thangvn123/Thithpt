@@ -1245,7 +1245,11 @@ img, video, iframe { max-width: 100%; }
 .sp-unit-body { margin-left: 14px; padding-left: 10px; border-left: 2px solid var(--line); }
 @media (max-width: 480px) {
   .sp-row { flex-wrap: wrap; }
-  .sp-progress-mini { order: 3; width: 100%; margin-left: 30px; }
+  .sp-progress-mini {
+    order: 3;
+    width: 60px;
+    margin-left: 30px;
+  }
 }
 
 /* ---------- Sắp xếp chương (kéo-thả) ---------- */
