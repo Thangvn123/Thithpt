@@ -157,21 +157,63 @@ input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 4px 12px rgba(168, 115, 15, .32);
 }
-.brand-name { font-family: var(--font-display); font-weight: 800; color: var(--ink); font-size: 15.5px; letter-spacing: .04em; }
+.brand-name { font-family: var(--font-display); font-weight: 800; color: var(--ink); font-size: 15.5px; letter-spacing: .04em; display: flex; align-items: center; gap: 7px; }
+.brand-badge {
+  background: var(--gold-deep); color: #fff; font-size: 10px; font-weight: 800;
+  padding: 2px 8px; border-radius: 999px; letter-spacing: .06em; font-family: var(--font-body);
+}
 .brand-sub { font-size: 11px; color: var(--pencil); }
 
-.nav {
-  display: flex; gap: 2px; flex-wrap: wrap; background: var(--surface-2);
-  border: 1px solid var(--line); border-radius: 999px; padding: 4px;
+.topbar-left { display: flex; align-items: center; gap: 14px; }
+.hamburger-btn {
+  width: 40px; height: 40px; border-radius: 12px; border: 1.5px solid var(--line);
+  background: var(--surface-2); display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 4px; cursor: pointer; flex-shrink: 0; transition: border-color .15s, background .15s;
 }
-.nav-btn {
-  padding: 8px 15px; border: none; background: transparent; border-radius: 999px;
-  font-weight: 700; font-size: 13.5px; color: var(--pencil); position: relative;
-  transition: color .15s, background .15s, box-shadow .15s;
+.hamburger-btn:hover { border-color: var(--gold); background: var(--gold-soft); }
+.hamburger-btn span { width: 18px; height: 2px; border-radius: 2px; background: var(--ink); display: block; }
+.topbar-title { font-family: var(--font-display); font-weight: 800; color: var(--ink); font-size: 16px; letter-spacing: .02em; }
+
+/* ---------- Drawer menu (thanh tác vụ trong 3 gạch) ---------- */
+.drawer-overlay {
+  position: fixed; inset: 0; background: rgba(20, 16, 8, .38); z-index: 60;
+  backdrop-filter: blur(1px); animation: fadeIn .2s ease both;
 }
-.nav-btn:hover { color: var(--ink); }
-.nav-btn.active { color: #fff; background: linear-gradient(135deg, var(--ink), var(--pen)); box-shadow: 0 3px 10px rgba(22, 38, 125, .25); }
-.nav-btn.active::after { content: none; }
+.side-drawer {
+  position: fixed; top: 0; left: 0; bottom: 0; width: 300px; max-width: 86vw; z-index: 61;
+  background: var(--gold-soft); border-right: 1px solid var(--line);
+  box-shadow: 12px 0 32px rgba(122, 82, 9, .18);
+  display: flex; flex-direction: column; padding: 18px 16px;
+  transform: translateX(-105%); transition: transform .28s cubic-bezier(.32,.72,0,1);
+}
+.side-drawer.open { transform: translateX(0); }
+.drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 22px; }
+.drawer-head .brand-mark { background: linear-gradient(140deg, var(--gold), var(--gold-deep)); width: 38px; height: 38px; font-size: 19px; }
+.drawer-head .brand-name { font-size: 15px; }
+
+.side-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; overflow-y: auto; }
+.side-nav-btn {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1.5px solid transparent;
+  background: transparent; border-radius: 14px; font-weight: 700; font-size: 14.5px; color: var(--text-soft);
+  text-align: left; transition: background .15s, border-color .15s, color .15s;
+}
+.side-nav-ic { font-size: 17px; width: 22px; text-align: center; flex-shrink: 0; }
+.side-nav-btn:hover { background: rgba(168, 115, 15, .08); }
+.side-nav-btn.active {
+  background: var(--card); border-color: var(--gold); color: var(--gold-deep);
+  box-shadow: 0 2px 8px rgba(168, 115, 15, .12);
+}
+.side-nav-btn .nav-badge { margin-left: auto; }
+
+.drawer-stat { background: var(--card); border-radius: 14px; padding: 14px 16px; margin-top: 14px; flex-shrink: 0; }
+.drawer-stat-row { display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; font-weight: 700; color: var(--gold-deep); letter-spacing: .03em; }
+.drawer-stat-row b { font-size: 15px; color: var(--ink); }
+.drawer-stat-note { font-size: 11px; color: var(--pencil); margin-top: 4px; }
+
+@media (min-width: 900px) {
+  .side-drawer { width: 280px; }
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 .user-box { display: flex; align-items: center; gap: 10px; }
 .user-chip { font-size: 13.5px; font-weight: 600; color: var(--ink); }
@@ -443,6 +485,19 @@ select.select {
 .filter-row select.select { min-width: 0; } /* cho phép grid co nhỏ hơn nội dung, không tràn */
 
 /* ---------- Bài giảng ---------- */
+.course-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px; margin-top: 4px;
+}
+.course-card { display: flex; flex-direction: column; }
+.course-thumb {
+  height: 130px; border-radius: var(--radius-sm); margin-bottom: 12px;
+  background: linear-gradient(135deg, var(--gold-soft), #F4E3BC);
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.course-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.course-thumb-fallback { font-size: 40px; opacity: .55; }
+
 .lesson-card .thumb {
   height: 150px; border-radius: var(--radius-sm); margin-bottom: 14px;
   background: linear-gradient(135deg, var(--pen-soft), #DCE4FB);
@@ -550,7 +605,8 @@ select.select {
 
 /* ---------- Responsive ---------- */
 @media (max-width: 720px) {
-  .topbar-inner { justify-content: center; }
+  .topbar-inner { justify-content: space-between; }
+  .topbar-title { font-size: 14px; }
   .rank-head, .rank-row { grid-template-columns: 44px 1fr 74px 66px; padding: 11px 12px; }
   .exam-timerbar { top: 132px; }
   .hero { padding: 26px 22px; }
