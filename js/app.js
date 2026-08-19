@@ -1294,8 +1294,14 @@ function renderMyAttempts(main, examId) {
    dùng chung cho trang Tiến độ học sinh — cùng logic gom nhóm với renderCategoryUnits() */
 function fmtDuration(sec) {
   sec = Math.max(0, Math.round(sec || 0));
-  const m = Math.floor(sec / 60), s = sec % 60;
-  return m + ":" + String(s).padStart(2, "0");
+
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+
+  return String(h).padStart(2, "0") + ":" +
+         String(m).padStart(2, "0") + ":" +
+         String(s).padStart(2, "0");
 }
 
 function spUnitsHtml(list, progMap) {
