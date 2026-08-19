@@ -175,16 +175,93 @@ function resultToRow(r) {
 }
 
 
-/* Ghi lịch sử học: mỗi người + mỗi video là 1 dòng, xem lại thì cập nhật thời gian */
-function recordProgress(lessonId) {
+/* Ghi lịch sử học: mỗi người + mỗi video là 1 dòng.
+   watchedSeconds/durationSeconds (nếu có) dùng để biết học sinh đã xem tới đâu trong video — luôn giữ mốc xa nhất đã đạt được, không bị lùi lại khi tua về đầu. */
+function recordProgress(lessonId, watchedSeconds, durationSeconds) {
   const id = CURRENT_USER.username + "__" + lessonId;
-  const row = { id, username: CURRENT_USER.username, lesson_id: lessonId, created_at: Date.now() };
+  const prev = PROGRESS.find((p) => p.id === id);
+  const row = {
+    id, username: CURRENT_USER.username, lesson_id: lessonId,
+    created_at: Date.now(),
+    watched_seconds: Math.round(Math.max(watchedSeconds || 0, prev ? (+prev.watched_seconds || 0) : 0)),
+    duration_seconds: Math.round(durationSeconds || (prev ? (+prev.duration_seconds || 0) : 0)),
+  };
   PROGRESS = PROGRESS.filter((p) => p.id !== id);
   PROGRESS.push(row);
   (async () => {
     try { await DBX.remove("progress", "id", id); } catch (e) { /* chưa có dòng cũ, bỏ qua */ }
     try { await DBX.insert("progress", row); } catch (e) { console.warn("Không lưu được lịch sử học:", e.message); }
   })();
+}
+
+/* Gắn theo dõi tiến độ xem cho thẻ <video> HTML5 (video tải trực tiếp / link .mp4…) — báo cáo mỗi 5 giây xem thực tế */
+function attachVideoProgressTracking(videoEl, lessonId) {
+  let lastReported = -5;
+  const report = () => {
+    const dur = videoEl.duration;
+    if (!dur || !isFinite(dur)) return;
+    const cur = videoEl.currentTime;
+    if (cur - lastReported >= 5 || videoEl.ended) {
+      lastReported = cur;
+      recordProgress(lessonId, cur, dur);
+    }
+  };
+  videoEl.addEventListener("timeupdate", report);
+  videoEl.addEventListener("pause", report);
+  videoEl.addEventListener("ended", report);
+  window.addEventListener("beforeunload", report);
+}
+
+/* Gắn theo dõi tiến độ xem cho video YouTube nhúng qua IFrame API — chỉ áp dụng được với link youtube.com/embed (Streamable/nguồn khác không hỗ trợ lấy thời gian xem qua JS) */
+let YT_API_READY = false, YT_API_LOADING = false;
+let YT_READY_CBS = [];
+function loadYouTubeAPI(cb) {
+  if (window.YT && window.YT.Player) { YT_API_READY = true; cb(); return; }
+  YT_READY_CBS.push(cb);
+  if (YT_API_LOADING) return;
+  YT_API_LOADING = true;
+  const prevCb = window.onYouTubeIframeAPIReady;
+  window.onYouTubeIframeAPIReady = () => {
+    YT_API_READY = true;
+    if (typeof prevCb === "function") prevCb();
+    YT_READY_CBS.forEach((f) => f());
+    YT_READY_CBS = [];
+  };
+  const tag = document.createElement("script");
+  tag.src = "https://www.youtube.com/iframe_api";
+  document.head.appendChild(tag);
+}
+function extractYouTubeId(url) {
+  const m = String(url || "").match(/youtube\.com\/embed\/([\w-]{6,})/);
+  return m ? m[1] : null;
+}
+function attachYouTubeProgressTracking(containerId, videoId, lessonId) {
+  loadYouTubeAPI(() => {
+    if (!$("#" + containerId)) return; // người dùng đã rời trang trước khi API tải xong
+    let player, pollTimer;
+    const report = () => {
+      try {
+        const dur = player.getDuration();
+        const cur = player.getCurrentTime();
+        if (dur) recordProgress(lessonId, cur, dur);
+      } catch (e) {}
+    };
+    player = new YT.Player(containerId, {
+      videoId,
+      playerVars: { rel: 0 },
+      events: {
+        onStateChange: (e) => {
+          if (e.data === YT.PlayerState.PLAYING) {
+            pollTimer = setInterval(report, 5000);
+          } else {
+            clearInterval(pollTimer);
+            if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) report();
+          }
+        },
+      },
+    });
+    window.addEventListener("beforeunload", report);
+  });
 }
 
 /* =====================================================
@@ -1215,7 +1292,13 @@ function renderMyAttempts(main, examId) {
 ===================================================== */
 /* Gom danh sách bài trong 1 chuyên mục thành từng "Bài X" (nếu có nhiều Phần),
    dùng chung cho trang Tiến độ học sinh — cùng logic gom nhóm với renderCategoryUnits() */
-function spUnitsHtml(list, watched) {
+function fmtDuration(sec) {
+  sec = Math.max(0, Math.round(sec || 0));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m + ":" + String(s).padStart(2, "0");
+}
+
+function spUnitsHtml(list, progMap) {
   const groupMap = {};
   const singles = [];
   for (const l of list) {
@@ -1228,17 +1311,24 @@ function spUnitsHtml(list, watched) {
   ].sort((a, b) => naturalVi(a.name, b.name));
 
   const rowHtml = (l) => {
-    const w = watched.get(l.id);
-    return `<div class="sp-row ${w ? "sp-done" : ""}">
-      <span class="sp-check">${w ? "✓" : "○"}</span>
+    const p = progMap.get(l.id);
+    const dur = p ? +p.duration_seconds || 0 : 0;
+    const wat = p ? +p.watched_seconds || 0 : 0;
+    const pct = dur ? Math.min(100, Math.round((wat / dur) * 100)) : 0;
+    const done = !!p && (pct >= 90 || (!dur && p));
+    return `<div class="sp-row ${done ? "sp-done" : p ? "sp-partial" : ""}">
+      <span class="sp-check">${done ? "✓" : p ? "◐" : "○"}</span>
       <span class="sp-title">${esc(l.title)}</span>
-      <span class="sp-time" ${w ? `title="${formatDateTimeVi(w)}"` : ""}>${w ? relativeTimeVi(w) : "chưa xem"}</span>
+      ${p && dur ? `
+        <span class="sp-progress-mini"><span class="sp-progress-mini-fill" style="width:${pct}%"></span></span>
+        <span class="sp-time" title="${formatDateTimeVi(p.created_at)}">${fmtDuration(wat)}/${fmtDuration(dur)} (${pct}%)</span>
+      ` : `<span class="sp-time" ${p ? `title="${formatDateTimeVi(p.created_at)}"` : ""}>${p ? relativeTimeVi(p.created_at) : "chưa xem"}</span>`}
     </div>`;
   };
 
   return units.map((u) => {
     if (!u.group) return rowHtml(u.items[0]);
-    const done = u.items.filter((l) => watched.has(l.id)).length;
+    const done = u.items.filter((l) => progMap.has(l.id)).length;
     return `
       <div class="sp-unit-head">📖 ${esc(u.name)} <span>${done}/${u.items.length} phần</span></div>
       <div class="sp-unit-body">${u.items.map(rowHtml).join("")}</div>`;
@@ -1252,6 +1342,7 @@ function renderStudentProgress(main, username) {
   const stuLessons = getVisibleLessonsFor(stu);
 
   const mine = PROGRESS.filter((p) => p.username === username);
+  const progMap = new Map(mine.map((p) => [p.lesson_id, p]));
   const watched = new Map(mine.map((p) => [p.lesson_id, +p.created_at]));
   const totalLessons = stuLessons.length;
   const pct = totalLessons ? Math.round((watched.size / totalLessons) * 100) : 0;
@@ -1308,7 +1399,7 @@ function renderStudentProgress(main, username) {
             ${catKeys.map((c) => `
               <div class="cat-head" style="cursor:default">${esc(c)}</div>
               <div class="sp-list">
-                ${spUnitsHtml(tree[ch][c], watched)}
+                ${spUnitsHtml(tree[ch][c], progMap)}
               </div>`).join("")}
           </div>
         </details>`;
@@ -2079,13 +2170,17 @@ function renderLessonDetail(main, id) {
   }
   recordProgress(ls.id);
 
+  const ytId = ls.videoType === "youtube" ? extractYouTubeId(ls.videoUrl) : null;
+  const ytContainerId = "yt-player-" + ls.id.replace(/[^\w-]/g, "");
   let player = "";
-  if (ls.videoType === "youtube") {
+  if (ls.videoType === "youtube" && ytId) {
+    player = `<div id="${ytContainerId}" style="width:100%;height:100%"></div>`;
+  } else if (ls.videoType === "youtube") {
     player = `<iframe src="${ls.videoUrl}" title="${esc(ls.title)}" allowfullscreen webkitallowfullscreen mozallowfullscreen allow="fullscreen; accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>`;
   } else if (ls.videoType === "url") {
-    player = `<video controls src="${ls.videoUrl}"></video>`;
+    player = `<video controls id="lesson-video-el" src="${ls.videoUrl}"></video>`;
   } else if (ls.videoType === "file") {
-    player = `<video controls src="${ls.videoData}"></video>`;
+    player = `<video controls id="lesson-video-el" src="${ls.videoData}"></video>`;
   } else {
     player = `<div style="color:#fff;display:flex;align-items:center;justify-content:center;height:100%">Bài giảng này chưa có video</div>`;
   }
@@ -2156,6 +2251,13 @@ function renderLessonDetail(main, id) {
   $("#back-lessons").addEventListener("click", () => go("lessons", { subject: ls.subject }));
   const editBtn = $("#edit-lesson-btn");
   if (editBtn) editBtn.addEventListener("click", () => go("editlesson", ls.id));
+
+  if (ls.videoType === "youtube" && ytId) {
+    attachYouTubeProgressTracking(ytContainerId, ytId, ls.id);
+  } else if (ls.videoType === "url" || ls.videoType === "file") {
+    const vEl = $("#lesson-video-el");
+    if (vEl) attachVideoProgressTracking(vEl, ls.id);
+  }
 
   // Toàn màn hình + tự xoay ngang
   const fsBtn = $("#fs-btn");
