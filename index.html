@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Phòng Thi Thử — Học & Thi THPT</title>
-  <meta name="description" content="Web thi thử THPT: làm đề, chấm điểm theo quy chế 2025, xếp hạng, bài giảng video và tài liệu học tập." />
+  <title>EXAMO — Luyện thi & Học tập THPT</title>
+  <meta name="description" content="EXAMO: làm đề thi thử, chấm điểm theo quy chế 2025, xếp hạng, bài giảng video và tài liệu học tập cho học sinh THPT." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,400;7..72,600;7..72,700;7..72,800&family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -23,7 +23,7 @@
     };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" id="MathJax-script" defer></script>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%2316267D'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Georgia'>T</text></svg>" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23A8730F'/><text x='50' y='68' font-size='48' text-anchor='middle' fill='white' font-family='Georgia'>E</text></svg>" />
 </head>
 <body>
   <!-- ======= MÀN HÌNH ĐĂNG NHẬP ======= -->
@@ -31,7 +31,7 @@
     <div class="auth-card">
       <div class="auth-head">
         <p class="eyebrow">KỲ THI THỬ TỐT NGHIỆP THPT</p>
-        <h1 class="auth-title">Phòng thi thử</h1>
+        <h1 class="auth-title">EXAMO</h1>
         <div class="red-rule"></div>
         <p class="auth-sub">Học bài giảng · Làm đề thi · Xem xếp hạng</p>
       </div>
@@ -55,25 +55,39 @@
 
   <!-- ======= KHUNG ỨNG DỤNG ======= -->
   <div id="app-shell" class="hidden">
-    <header class="topbar">
-      <div class="topbar-inner">
+    <div id="drawer-overlay" class="drawer-overlay hidden"></div>
+    <aside id="side-drawer" class="side-drawer">
+      <div class="drawer-head">
         <div class="brand" id="brand-home">
-          <div class="brand-mark">T</div>
+          <div class="brand-mark">E</div>
           <div>
-            <div class="brand-name">PHÒNG THI THỬ</div>
+            <div class="brand-name">EXAMO <span class="brand-badge">PRO</span></div>
             <div class="brand-sub">Học & thi theo chuẩn THPT 2025 · <span id="db-badge"></span></div>
           </div>
         </div>
-        <nav class="nav" id="main-nav">
-          <button class="nav-btn" data-view="exams">Đề thi</button>
-          <button class="nav-btn" data-view="lessons">Bài giảng</button>
-          <button class="nav-btn" data-view="rank">Xếp hạng</button>
-          <button class="nav-btn" data-view="qa">Hỏi bài <span id="qa-badge" class="nav-badge hidden">0</span></button>
-          <button class="nav-btn" data-view="messages">Nhắn tin <span id="dm-badge" class="nav-badge hidden">0</span></button>
-          <button class="nav-btn" data-view="profile">Hồ sơ</button>
-          <button class="nav-btn admin-only hidden" data-view="upload">Tải lên</button>
-          <button class="nav-btn admin-only hidden" data-view="admin">Quản trị</button>
-        </nav>
+        <button id="drawer-close" class="dm-icon-btn" title="Đóng" aria-label="Đóng menu">✕</button>
+      </div>
+      <nav class="side-nav" id="main-nav">
+        <button class="side-nav-btn" data-view="exams"><span class="side-nav-ic">🏠</span>Tổng quan</button>
+        <button class="side-nav-btn" data-view="lessons"><span class="side-nav-ic">📚</span>Bài giảng</button>
+        <button class="side-nav-btn" data-view="rank"><span class="side-nav-ic">📈</span>Xếp hạng</button>
+        <button class="side-nav-btn" data-view="qa"><span class="side-nav-ic">💬</span>Hỏi bài <span id="qa-badge" class="nav-badge hidden">0</span></button>
+        <button class="side-nav-btn" data-view="messages"><span class="side-nav-ic">✉️</span>Nhắn tin <span id="dm-badge" class="nav-badge hidden">0</span></button>
+        <button class="side-nav-btn" data-view="profile"><span class="side-nav-ic">👤</span>Hồ sơ</button>
+        <button class="side-nav-btn admin-only hidden" data-view="upload"><span class="side-nav-ic">⬆️</span>Tải lên</button>
+        <button class="side-nav-btn admin-only hidden" data-view="admin"><span class="side-nav-ic">🛠️</span>Quản trị</button>
+      </nav>
+      <div class="drawer-stat" id="drawer-stat"></div>
+    </aside>
+
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="topbar-left">
+          <button id="hamburger-btn" class="hamburger-btn" title="Menu" aria-label="Mở menu">
+            <span></span><span></span><span></span>
+          </button>
+          <span class="topbar-title" id="topbar-title">EXAMO</span>
+        </div>
         <div class="user-box">
           <button id="notif-btn" class="notif-btn" title="Thông báo" aria-label="Thông báo">🔔<span id="notif-badge" class="notif-badge hidden"></span></button>
           <button id="profile-btn" class="user-profile-btn" title="Hồ sơ của tôi">
@@ -90,7 +104,7 @@
     <main id="main" class="main"></main>
 
     <footer class="footer">
-      <span>Phòng Thi Thử · Chấm điểm theo quy chế thi tốt nghiệp THPT 2025</span>
+      <span>EXAMO · Chấm điểm theo quy chế thi tốt nghiệp THPT 2025</span>
     </footer>
   </div>
 
