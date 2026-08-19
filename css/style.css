@@ -1227,15 +1227,26 @@ img, video, iframe { max-width: 100%; }
   font-size: 12px; font-weight: 800; color: var(--pencil); border: 1.5px solid var(--line);
 }
 .sp-row.sp-done .sp-check { background: var(--green); border-color: var(--green); color: #fff; }
+.sp-row.sp-partial .sp-check { background: var(--gold-soft); border-color: var(--gold); color: var(--gold-deep); }
 .sp-title { flex: 1; color: var(--text); }
 .sp-row.sp-done .sp-title { color: var(--pencil); }
 .sp-time { font-size: 11.5px; color: var(--pencil); white-space: nowrap; flex-shrink: 0; }
+.sp-progress-mini {
+  display: inline-block; width: 60px; height: 6px; border-radius: 999px;
+  background: var(--line); overflow: hidden; flex-shrink: 0;
+}
+.sp-progress-mini-fill { display: block; height: 100%; background: var(--gold); border-radius: 999px; }
+.sp-row.sp-done .sp-progress-mini-fill { background: var(--green); }
 .sp-unit-head {
   font-weight: 700; font-size: 13px; color: var(--ink); margin: 10px 0 2px; padding-left: 2px;
   display: flex; align-items: center; gap: 6px;
 }
 .sp-unit-head span { font-size: 11.5px; color: var(--pencil); font-weight: 400; }
 .sp-unit-body { margin-left: 14px; padding-left: 10px; border-left: 2px solid var(--line); }
+@media (max-width: 480px) {
+  .sp-row { flex-wrap: wrap; }
+  .sp-progress-mini { order: 3; width: 100%; margin-left: 30px; }
+}
 
 /* ---------- Sắp xếp chương (kéo-thả) ---------- */
 .oc-list { display: flex; flex-direction: column; gap: 8px; touch-action: none; }
