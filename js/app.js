@@ -459,9 +459,36 @@ function forceLogout(msg) {
 }
 
 /* ---------- Điều hướng ---------- */
+const VIEW_LABELS = {
+  exams: "Tổng quan", lessons: "Bài giảng", lesson: "Bài giảng", rank: "Xếp hạng",
+  qa: "Hỏi bài", qadetail: "Hỏi bài", messages: "Nhắn tin", messagedetail: "Nhắn tin",
+  profile: "Hồ sơ", upload: "Tải lên", admin: "Quản trị", changepw: "Đổi mật khẩu",
+  taking: "Đang làm bài", result: "Kết quả",
+};
+function openDrawer() {
+  $("#side-drawer").classList.add("open");
+  $("#drawer-overlay").classList.remove("hidden");
+  updateDrawerStat();
+}
+function closeDrawer() {
+  $("#side-drawer").classList.remove("open");
+  $("#drawer-overlay").classList.add("hidden");
+}
+function updateDrawerStat() {
+  const el = $("#drawer-stat");
+  if (!el || !CURRENT_USER) return;
+  const mine = RESULTS.filter((r) => r.username === CURRENT_USER.username);
+  const acc = mine.length ? (mine.reduce((s, r) => s + (r.maxRaw ? r.raw / r.maxRaw : 0), 0) / mine.length * 100) : 0;
+  el.innerHTML = `
+    <div class="drawer-stat-row"><span>TỈ LỆ CHÍNH XÁC</span><b>${mine.length ? acc.toFixed(0) + "%" : "0%"}</b></div>
+    <p class="drawer-stat-note">Kết quả từ ${mine.length} bài đã làm</p>`;
+}
 function setupNav() {
-  $$("#main-nav .nav-btn").forEach((b) => b.addEventListener("click", () => go(b.dataset.view)));
-  $("#brand-home").addEventListener("click", () => go("exams"));
+  $$("#main-nav .side-nav-btn").forEach((b) => b.addEventListener("click", () => { go(b.dataset.view); closeDrawer(); }));
+  $("#brand-home").addEventListener("click", () => { go("exams"); closeDrawer(); });
+  $("#hamburger-btn").addEventListener("click", openDrawer);
+  $("#drawer-close").addEventListener("click", closeDrawer);
+  $("#drawer-overlay").addEventListener("click", closeDrawer);
   $("#profile-btn").addEventListener("click", () => go("profile"));
   $("#changepw-btn").addEventListener("click", () => go("changepw"));
   $("#logout-btn").addEventListener("click", () => {
@@ -475,7 +502,9 @@ function go(view, payload) {
   if (VIEW === "taking" && view !== "taking" && view !== "result") stopTimer();
   if (VIEW === "exams" && view !== "exams" && COUNTDOWN_TIMER) { clearInterval(COUNTDOWN_TIMER); COUNTDOWN_TIMER = null; }
   VIEW = view;
-  $$("#main-nav .nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  $$("#main-nav .side-nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  const titleEl = $("#topbar-title");
+  if (titleEl) titleEl.textContent = VIEW_LABELS[view] || "EXAMO";
   const main = $("#main");
   window.scrollTo({ top: 0 });
   main.classList.remove("view-anim");
@@ -483,7 +512,7 @@ function go(view, payload) {
   main.classList.add("view-anim");
 
   if (view === "exams") renderExams(main);
-  else if (view === "lessons") renderLessons(main);
+  else if (view === "lessons") renderLessons(main, payload);
   else if (view === "lesson") renderLessonDetail(main, payload);
   else if (view === "rank") renderRank(main);
   else if (view === "upload") renderUpload(main);
@@ -1479,22 +1508,97 @@ async function renderLessonsAsync(main, filter) {
     await syncView(main, ["lessons", "progress"]);
     if (VIEW !== "lessons") return;
   }
-  filter = filter || { subject: "all", category: "all", chapter: "all" };
+  filter = filter || {};
   const visibleLessons = getVisibleLessons();
 
-  /* Tiến độ học của người dùng hiện tại */
+  /* Tiến độ học của người dùng hiện tại (dùng chung cho cả 2 màn) */
   const myProg = PROGRESS
     .filter((p) => p.username === CURRENT_USER.username)
     .sort((a, b) => (+b.created_at || 0) - (+a.created_at || 0));
   const watched = new Set(myProg.map((p) => p.lesson_id));
   const lastEntry = myProg.map((p) => ({ p, l: visibleLessons.find((x) => x.id === p.lesson_id) })).find((x) => x.l);
-  const subjects = [...new Set(visibleLessons.map((l) => l.subject))];
-  const cats = [...new Set(visibleLessons.map((l) => l.category || "Khác"))];
-  const chapters = [...new Set(visibleLessons.map((l) => l.chapter || "Chưa phân chương"))].sort(naturalVi);
 
-  let shown = visibleLessons.filter(
+  /* ============ MÀN 1: CHỌN KHOÁ HỌC (theo môn) ============ */
+  if (!filter.subject) {
+    const subjects = [...new Set(visibleLessons.map((l) => l.subject))].sort(naturalVi);
+    const courseCard = (s) => {
+      const ls = visibleLessons.filter((l) => l.subject === s);
+      const nChapters = new Set(ls.map((l) => l.chapter || "Chưa phân chương")).size;
+      const nDone = ls.filter((l) => watched.has(l.id)).length;
+      const pct = ls.length ? Math.round((nDone / ls.length) * 100) : 0;
+      const thumb = ls.map(lessonThumb).find(Boolean);
+      return `
+      <div class="card hoverable course-card" data-course="${esc(s)}" style="cursor:pointer">
+        <div class="course-thumb">
+          ${thumb ? `<img src="${thumb}" alt="" loading="lazy" onerror="this.remove()" />` : `<div class="course-thumb-fallback">📘</div>`}
+        </div>
+        <h3 class="card-title">${esc(s)}</h3>
+        <p class="card-meta">${ls.length} video · ${nChapters} chương</p>
+        <div class="chapter-progress-bar" style="margin-top:10px"><div class="chapter-progress-fill" style="width:${pct}%"></div></div>
+        <p class="card-meta" style="margin-top:6px">${nDone}/${ls.length} đã học · ${pct}%</p>
+      </div>`;
+    };
+
+    main.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h2 class="page-title">Bài giảng</h2>
+          <p class="page-sub">Chọn một khoá học để xem toàn bộ video của môn đó.</p>
+        </div>
+        ${CURRENT_USER.role === "admin" ? `
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-outline" id="order-chapters-btn">🔀 Sắp xếp &amp; khoá chương</button>
+            <button class="btn btn-primary" id="add-lesson-btn">+ Thêm bài giảng</button>
+          </div>` : ""}
+      </div>
+
+      ${lastEntry ? `
+        <div class="continue-banner" data-continue="${lastEntry.l.id}">
+          <div class="cb-icon">🕐</div>
+          <div class="cb-info">
+            <p class="cb-label">Học gần nhất · ${new Date(+lastEntry.p.created_at).toLocaleString("vi-VN")}</p>
+            <p class="cb-title">${esc(lastEntry.l.title)}</p>
+          </div>
+          <span class="btn btn-primary btn-sm">Tiếp tục học ▸</span>
+        </div>
+      ` : ""}
+
+      ${myProg.length > 1 ? `
+        <details class="history-fold" data-fold="history" ${foldIsOpen("history", false) ? "open" : ""}>
+          <summary>📜 Lịch sử học gần đây <span>· ${watched.size} video đã xem</span><b class="chev">▾</b></summary>
+          <div class="history-list">
+            ${myProg.slice(0, 8).map((p) => {
+              const l = LESSONS.find((x) => x.id === p.lesson_id);
+              return l ? `<button class="part-link" data-continue="${l.id}">▶ ${esc(l.title)} <span style="color:var(--pencil);font-weight:400;font-size:12px">· ${new Date(+p.created_at).toLocaleDateString("vi-VN")}</span></button>` : "";
+            }).join("")}
+          </div>
+        </details>
+      ` : ""}
+
+      ${visibleLessons.length === 0 ? `
+        <div class="empty"><div class="big">🎬</div>Chưa có bài giảng nào.${CURRENT_USER.role === "admin" ? " Bấm <b>+ Thêm bài giảng</b> để đăng video và tài liệu đầu tiên." : " Hãy quay lại sau nhé!"}</div>
+      ` : `<div class="course-grid">${subjects.map(courseCard).join("")}</div>`}
+    `;
+
+    const addBtn = $("#add-lesson-btn");
+    if (addBtn) addBtn.addEventListener("click", () => go("upload"));
+    const orderBtn = $("#order-chapters-btn");
+    if (orderBtn) orderBtn.addEventListener("click", () => go("orderchapters"));
+    $$("[data-course]", main).forEach((c) => c.addEventListener("click", () => renderLessons(main, { subject: c.dataset.course })));
+    $$("[data-continue]", main).forEach((c) => c.addEventListener("click", () => go("lesson", c.dataset.continue)));
+    bindFoldMemory(main);
+    return;
+  }
+
+  /* ============ MÀN 2: DANH SÁCH BÀI GIẢNG TRONG 1 KHOÁ ============ */
+  filter.category = filter.category || "all";
+  filter.chapter = filter.chapter || "all";
+  const courseLessons = visibleLessons.filter((l) => l.subject === filter.subject);
+  const cats = [...new Set(courseLessons.map((l) => l.category || "Khác"))];
+  const chapters = [...new Set(courseLessons.map((l) => l.chapter || "Chưa phân chương"))].sort(naturalVi);
+
+  let shown = courseLessons.filter(
     (l) =>
-      (filter.subject === "all" || l.subject === filter.subject) &&
       (filter.category === "all" || (l.category || "Khác") === filter.category) &&
       (filter.chapter === "all" || (l.chapter || "Chưa phân chương") === filter.chapter)
   );
@@ -1538,7 +1642,8 @@ async function renderLessonsAsync(main, filter) {
   main.innerHTML = `
     <div class="page-head">
       <div>
-        <h2 class="page-title">Bài giảng</h2>
+        <button class="btn btn-ghost btn-sm" id="back-to-courses" style="margin-bottom:8px">← Chọn khoá khác</button>
+        <h2 class="page-title">Khoá ${esc(filter.subject)}</h2>
         <p class="page-sub">Học theo lộ trình: mỗi chương chia thành các chuyên mục, trong mỗi mục là các bài xếp đúng thứ tự.</p>
       </div>
       ${CURRENT_USER.role === "admin" ? `
@@ -1548,12 +1653,8 @@ async function renderLessonsAsync(main, filter) {
         </div>` : ""}
     </div>
 
-    ${visibleLessons.length > 0 ? `
+    ${courseLessons.length > 0 ? `
       <div class="filter-row">
-        <select class="select" id="filter-subject">
-          <option value="all">Tất cả môn học</option>
-          ${subjects.map((s) => `<option value="${esc(s)}" ${filter.subject === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
-        </select>
         <select class="select" id="filter-chapter">
           <option value="all">Tất cả các chương</option>
           ${chapters.map((c) => `<option value="${esc(c)}" ${filter.chapter === c ? "selected" : ""}>${esc(c)}</option>`).join("")}
@@ -1565,32 +1666,7 @@ async function renderLessonsAsync(main, filter) {
       </div>
     ` : ""}
 
-    ${lastEntry ? `
-      <div class="continue-banner" data-continue="${lastEntry.l.id}">
-        <div class="cb-icon">🕐</div>
-        <div class="cb-info">
-          <p class="cb-label">Học gần nhất · ${new Date(+lastEntry.p.created_at).toLocaleString("vi-VN")}</p>
-          <p class="cb-title">${esc(lastEntry.l.title)}</p>
-        </div>
-        <span class="btn btn-primary btn-sm">Tiếp tục học ▸</span>
-      </div>
-    ` : ""}
-
-    ${myProg.length > 1 ? `
-      <details class="history-fold" data-fold="history" ${foldIsOpen("history", false) ? "open" : ""}>
-        <summary>📜 Lịch sử học gần đây <span>· ${watched.size} video đã xem</span><b class="chev">▾</b></summary>
-        <div class="history-list">
-          ${myProg.slice(0, 8).map((p) => {
-            const l = LESSONS.find((x) => x.id === p.lesson_id);
-            return l ? `<button class="part-link" data-continue="${l.id}">▶ ${esc(l.title)} <span style="color:var(--pencil);font-weight:400;font-size:12px">· ${new Date(+p.created_at).toLocaleDateString("vi-VN")}</span></button>` : "";
-          }).join("")}
-        </div>
-      </details>
-    ` : ""}
-
-    ${visibleLessons.length === 0 ? `
-      <div class="empty"><div class="big">🎬</div>Chưa có bài giảng nào.${CURRENT_USER.role === "admin" ? " Bấm <b>+ Thêm bài giảng</b> để đăng video và tài liệu đầu tiên." : " Hãy quay lại sau nhé!"}</div>
-    ` : shown.length === 0 ? `
+    ${shown.length === 0 ? `
       <div class="empty"><div class="big">🔍</div>Không có bài giảng nào khớp bộ lọc.</div>
     ` : (() => {
       const lockMap = CURRENT_USER.role === "admin" ? {} : getChapterLockStatusMap();
@@ -1635,6 +1711,7 @@ async function renderLessonsAsync(main, filter) {
       }).join("");
     })()}`;
 
+  $("#back-to-courses").addEventListener("click", () => renderLessons(main, {}));
   const addBtn = $("#add-lesson-btn");
   if (addBtn) addBtn.addEventListener("click", () => go("upload"));
   const orderBtn = $("#order-chapters-btn");
@@ -1642,16 +1719,13 @@ async function renderLessonsAsync(main, filter) {
   $$("[data-lesson]", main).forEach((c) =>
     c.addEventListener("click", () => go("lesson", c.dataset.lesson))
   );
-  $$("[data-continue]", main).forEach((c) =>
-    c.addEventListener("click", () => go("lesson", c.dataset.continue))
-  );
   $$("[data-goto-exam]", main).forEach((c) =>
     c.addEventListener("click", () => go("exams"))
   );
   bindFoldMemory(main);
-  const fSub = $("#filter-subject"), fCat = $("#filter-category"), fCh = $("#filter-chapter");
-  const refilter = () => renderLessons(main, { subject: fSub.value, category: fCat.value, chapter: fCh.value });
-  if (fSub) { fSub.addEventListener("change", refilter); fCat.addEventListener("change", refilter); fCh.addEventListener("change", refilter); }
+  const fCat = $("#filter-category"), fCh = $("#filter-chapter");
+  const refilter = () => renderLessons(main, { subject: filter.subject, category: fCat.value, chapter: fCh.value });
+  if (fCat) { fCat.addEventListener("change", refilter); fCh.addEventListener("change", refilter); }
 }
 
 /* =====================================================
@@ -2079,7 +2153,7 @@ function renderLessonDetail(main, id) {
       </div>
     </div>`;
 
-  $("#back-lessons").addEventListener("click", () => go("lessons"));
+  $("#back-lessons").addEventListener("click", () => go("lessons", { subject: ls.subject }));
   const editBtn = $("#edit-lesson-btn");
   if (editBtn) editBtn.addEventListener("click", () => go("editlesson", ls.id));
 
