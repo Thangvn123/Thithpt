@@ -4,6 +4,7 @@
 
 /* ---------- Trạng thái ---------- */
 let USERS = [], EXAMS = [], LESSONS = [], RESULTS = [], PROGRESS = [], NOTICES = [], COMMENTS = [], REPORTS = [], CHAPTER_ORDER = [], CHAPTER_LOCKS = {};
+let CATEGORY_ORDER = {}, UNIT_ORDER = {};
 let PRESENCE = [];
 let QA_QUESTIONS = [], QA_MESSAGES = [];
 let DM_MESSAGES = [];
@@ -87,7 +88,11 @@ async function loadAllTables() {
     CHAPTER_ORDER = (orderRow && orderRow.value) || [];
     const lockRow = rows.find((r) => r.key === "chapter_locks");
     CHAPTER_LOCKS = (lockRow && lockRow.value) || {};
-  } catch (err) { CHAPTER_ORDER = []; CHAPTER_LOCKS = {}; console.warn("Chưa có bảng settings (chạy SQL bổ sung để lưu thứ tự/khoá chương):", err.message); }
+    const catRow = rows.find((r) => r.key === "category_order");
+    CATEGORY_ORDER = (catRow && catRow.value) || {};
+    const unitRow = rows.find((r) => r.key === "unit_order");
+    UNIT_ORDER = (unitRow && unitRow.value) || {};
+  } catch (err) { CHAPTER_ORDER = []; CHAPTER_LOCKS = {}; CATEGORY_ORDER = {}; UNIT_ORDER = {}; console.warn("Chưa có bảng settings (chạy SQL bổ sung để lưu thứ tự/khoá chương):", err.message); }
 
   // Tạo admin mặc định nếu hệ thống chưa có
   if (!USERS.some((x) => x.role === "admin")) {
@@ -137,6 +142,10 @@ async function sync(...tables) {
         CHAPTER_ORDER = (orderRow && orderRow.value) || [];
         const lockRow = rows.find((r) => r.key === "chapter_locks");
         CHAPTER_LOCKS = (lockRow && lockRow.value) || {};
+        const catRow = rows.find((r) => r.key === "category_order");
+        CATEGORY_ORDER = (catRow && catRow.value) || {};
+        const unitRow = rows.find((r) => r.key === "unit_order");
+        UNIT_ORDER = (unitRow && unitRow.value) || {};
       }
     } catch (e) { console.error(e); }
   }
@@ -601,7 +610,7 @@ function go(view, payload) {
   else if (view === "myattempts") renderMyAttempts(main, payload);
   else if (view === "studentprogress") renderStudentProgress(main, payload);
   else if (view === "studentaccess") renderStudentAccess(main, payload);
-  else if (view === "orderchapters") renderOrderChapters(main);
+  else if (view === "orderchapters") renderOrderChapters(main, payload);
   else if (view === "taking") renderTaking(main);
   else if (view === "result") renderResult(main);
   else if (view === "qa") renderQA(main);
@@ -1304,17 +1313,19 @@ function fmtDuration(sec) {
          String(s).padStart(2, "0");
 }
 
-function spUnitsHtml(list, progMap) {
+function spUnitsHtml(list, progMap, ch, cat) {
   const groupMap = {};
   const singles = [];
   for (const l of list) {
     if (l.lesson) (groupMap[l.lesson] = groupMap[l.lesson] || []).push(l);
     else singles.push(l);
   }
-  const units = [
-    ...Object.entries(groupMap).map(([name, items]) => ({ name, group: true, items: items.sort((a, b) => naturalVi(a.title, b.title)) })),
-    ...singles.map((l) => ({ name: l.title, group: false, items: [l] })),
-  ].sort((a, b) => naturalVi(a.name, b.name));
+  const unitMap = {};
+  for (const [name, items] of Object.entries(groupMap)) {
+    unitMap[name] = { name, group: true, items: items.sort((a, b) => naturalVi(a.title, b.title)) };
+  }
+  for (const l of singles) unitMap[l.title] = { name: l.title, group: false, items: [l] };
+  const units = orderUnitKeys(ch, cat, Object.keys(unitMap)).map((n) => unitMap[n]);
 
   const rowHtml = (l) => {
     const p = progMap.get(l.id);
@@ -1414,7 +1425,6 @@ function renderStudentProgress(main, payload) {
   const subjWatched = subjLessons.filter((l) => watched.has(l.id)).length;
   const subjPct = subjLessons.length ? Math.round((subjWatched / subjLessons.length) * 100) : 0;
 
-  const catOrder = [...LESSON_CATEGORIES, "Khác"];
   const tree = {};
   for (const l of subjLessons) {
     const ch = l.chapter || "Chưa phân chương";
@@ -1441,7 +1451,7 @@ function renderStudentProgress(main, payload) {
       </div>
 
       ${chapterKeys.length === 0 ? `<div class="empty">Môn này chưa có bài giảng nào.</div>` : chapterKeys.map((ch) => {
-        const catKeys = Object.keys(tree[ch]).sort((a, b) => (catOrder.indexOf(a) === -1 ? 99 : catOrder.indexOf(a)) - (catOrder.indexOf(b) === -1 ? 99 : catOrder.indexOf(b)));
+        const catKeys = orderCategoryKeys(ch, Object.keys(tree[ch]));
         const chapterLessons = Object.values(tree[ch]).flat();
         const chDone = chapterLessons.filter((l) => watched.has(l.id)).length;
         const chPct = chapterLessons.length ? Math.round((chDone / chapterLessons.length) * 100) : 0;
@@ -1455,7 +1465,7 @@ function renderStudentProgress(main, payload) {
             ${catKeys.map((c) => `
               <div class="cat-head" style="cursor:default">${esc(c)}</div>
               <div class="sp-list">
-                ${spUnitsHtml(tree[ch][c], progMap)}
+                ${spUnitsHtml(tree[ch][c], progMap, ch, c)}
               </div>`).join("")}
           </div>
         </details>`;
@@ -1751,7 +1761,6 @@ async function renderLessonsAsync(main, filter) {
   );
 
   /* Cấu trúc cây: CHƯƠNG → CHUYÊN MỤC → các bài (sắp Bài 1, Bài 2, … Bài 10 đúng thứ tự) */
-  const catOrder = [...LESSON_CATEGORIES, "Khác"];
   const tree = {};
   for (const l of shown) {
     const ch = l.chapter || "Chưa phân chương";
@@ -1760,15 +1769,7 @@ async function renderLessonsAsync(main, filter) {
     (tree[ch][c] = tree[ch][c] || []).push(l);
   }
   const chapterKeys = orderChapterKeys(tree);
-  for (const ch of chapterKeys) {
-    for (const c of Object.keys(tree[ch])) {
-      tree[ch][c].sort((a, b) => naturalVi(a.title, b.title));
-    }
-  }
-  const catKeysOf = (ch) =>
-    Object.keys(tree[ch]).sort(
-      (a, b) => (catOrder.indexOf(a) === -1 ? 99 : catOrder.indexOf(a)) - (catOrder.indexOf(b) === -1 ? 99 : catOrder.indexOf(b))
-    );
+  const catKeysOf = (ch) => orderCategoryKeys(ch, Object.keys(tree[ch]));
 
   const lessonCard = (ls, idx) => `
     <div class="card hoverable lesson-card ${watched.has(ls.id) ? "is-watched" : ""}" data-lesson="${ls.id}" style="cursor:pointer">
@@ -1851,7 +1852,7 @@ async function renderLessonsAsync(main, filter) {
             ${catKeysOf(ch).map((c) => `
               <details class="cat-fold" data-fold="cat:${esc(ch)}|${esc(c)}" ${foldIsOpen("cat:" + ch + "|" + c, true) ? "open" : ""}>
                 <summary class="cat-head">${esc(c)} <span>· ${tree[ch][c].length} video</span><b class="chev">▾</b></summary>
-                <div class="cat-body">${renderCategoryUnits(tree[ch][c], lessonCard, ch + "|" + c)}</div>
+                <div class="cat-body">${renderCategoryUnits(tree[ch][c], lessonCard, ch + "|" + c, ch, c)}</div>
               </details>`).join("")}
           </div>
         </details>`;
@@ -1862,7 +1863,7 @@ async function renderLessonsAsync(main, filter) {
   const addBtn = $("#add-lesson-btn");
   if (addBtn) addBtn.addEventListener("click", () => go("upload"));
   const orderBtn = $("#order-chapters-btn");
-  if (orderBtn) orderBtn.addEventListener("click", () => go("orderchapters"));
+  if (orderBtn) orderBtn.addEventListener("click", () => go("orderchapters", filter.subject));
   $$("[data-lesson]", main).forEach((c) =>
     c.addEventListener("click", () => go("lesson", c.dataset.lesson))
   );
@@ -1878,12 +1879,16 @@ async function renderLessonsAsync(main, filter) {
 /* =====================================================
    SẮP XẾP CHƯƠNG (kéo-thả — chỉ admin)
 ===================================================== */
-function renderOrderChapters(main) {
+function renderOrderChapters(main, subjectParam) {
   if (CURRENT_USER.role !== "admin") return go("lessons");
 
-  // Danh sách chương thực tế hiện có, khởi điểm theo thứ tự đang hiển thị (đã gộp CHAPTER_ORDER + ngày đăng)
+  const allSubjects = [...new Set(LESSONS.map((l) => l.subject))].sort(naturalVi);
+  const subject = allSubjects.includes(subjectParam) ? subjectParam : allSubjects[0];
+
+  // Danh sách chương của RIÊNG môn đang chọn, khởi điểm theo thứ tự đang hiển thị (đã gộp CHAPTER_ORDER + ngày đăng)
+  const subjLessons = LESSONS.filter((l) => l.subject === subject);
   const tree = {};
-  for (const l of LESSONS) {
+  for (const l of subjLessons) {
     const ch = l.chapter || "Chưa phân chương";
     tree[ch] = tree[ch] || {};
     (tree[ch][l.category || "Khác"] = tree[ch][l.category || "Khác"] || []).push(l);
@@ -1896,26 +1901,75 @@ function renderOrderChapters(main) {
     const ids = cfg.requireExamIds || (cfg.requireExamId ? [cfg.requireExamId] : []);
     if (ids.length) locksMap[ch] = ids.slice();
   }
+  // Thứ tự chuyên mục & bài — khởi điểm theo thứ tự đang hiển thị (đã gộp tuỳ chỉnh cũ + mặc định)
+  const catOrderMap = {};   // { chapterName: [catName, ...] }
+  const unitOrderMap = {};  // { "chapterName||catName": [unitName, ...] }
+  for (const ch of orderArr) {
+    catOrderMap[ch] = orderCategoryKeys(ch, Object.keys(tree[ch]));
+    for (const c of catOrderMap[ch]) {
+      unitOrderMap[ch + "||" + c] = orderUnitKeys(ch, c, getCategoryUnitNames(tree[ch][c]));
+    }
+  }
+  const openFolds = new Set(); // nhớ mục nào đang mở để không tự đóng lại sau mỗi lần sắp xếp
 
   main.innerHTML = `
     <div style="max-width:560px;margin:0 auto">
       <button class="btn btn-ghost btn-sm" id="oc-back" style="margin-bottom:16px">← Quay lại Bài giảng</button>
       <div class="card">
         <h2 class="page-title" style="font-size:20px;margin-bottom:4px">🔀 Sắp xếp &amp; khoá chương</h2>
-        <p class="card-meta" style="margin-bottom:16px">Kéo ☰ hoặc dùng ▲▼ để đổi vị trí. Tick chọn 1 hoặc nhiều đề ở mục 🔒 — chương chỉ mở khi làm xong <b>tất cả</b> đề đã tick, và khoá này sẽ áp dụng luôn cho <b>các chương phía sau</b> cho tới khi đủ điều kiện. Nhớ bấm <b>Lưu thay đổi</b> khi xong.</p>
-        ${orderArr.length === 0 ? `<p class="hint">Chưa có chương nào để sắp xếp.</p>` : `<div class="oc-list" id="oc-list"></div>`}
+        <p class="card-meta" style="margin-bottom:16px">Kéo ☰ hoặc dùng ▲▼ để đổi vị trí chương. Mở mục <b>🗂 Chuyên mục &amp; bài</b> để sắp xếp thêm bên trong. Tick chọn 1 hoặc nhiều đề ở mục 🔒 — chương chỉ mở khi làm xong <b>tất cả</b> đề đã tick, và khoá này sẽ áp dụng luôn cho <b>các chương phía sau</b> cho tới khi đủ điều kiện. Nhớ bấm <b>Lưu thay đổi</b> khi xong.</p>
+        ${allSubjects.length > 1 ? `
+        <div class="field" style="margin-bottom:16px">
+          <label>Môn học</label>
+          <select id="oc-subject" class="select" style="width:100%">
+            ${allSubjects.map((s) => `<option value="${esc(s)}" ${s === subject ? "selected" : ""}>${esc(s)}</option>`).join("")}
+          </select>
+        </div>` : ""}
+        ${orderArr.length === 0 ? `<p class="hint">Môn này chưa có chương nào để sắp xếp.</p>` : `<div class="oc-list" id="oc-list"></div>`}
         <p id="oc-msg" class="success-box hidden" style="margin-top:14px"></p>
         <button class="btn btn-primary" id="oc-save" style="margin-top:14px" ${orderArr.length === 0 ? "disabled" : ""}>💾 Lưu thay đổi</button>
       </div>
     </div>`;
 
   $("#oc-back").addEventListener("click", () => go("lessons"));
+  const subjSel = $("#oc-subject");
+  if (subjSel) subjSel.addEventListener("change", () => renderOrderChapters(main, subjSel.value));
   if (orderArr.length === 0) return;
 
   const listEl = $("#oc-list");
+
+  const catUnitBodyHtml = (ch) => catOrderMap[ch].map((c, ci) => {
+    const units = unitOrderMap[ch + "||" + c] || [];
+    const unitFoldKey = "u:" + ch + "||" + c;
+    return `
+    <div class="oc-subrow">
+      <span class="oc-name">📂 ${esc(c)}</span>
+      <span class="oc-btns">
+        <button class="oc-arrow" data-catup data-ch="${esc(ch)}" data-cat="${esc(c)}" ${ci === 0 ? "disabled" : ""} title="Lên">▲</button>
+        <button class="oc-arrow" data-catdown data-ch="${esc(ch)}" data-cat="${esc(c)}" ${ci === catOrderMap[ch].length - 1 ? "disabled" : ""} title="Xuống">▼</button>
+      </span>
+    </div>
+    ${units.length > 1 ? `
+    <details class="oc-unit-fold" data-unit-fold-key="${esc(unitFoldKey)}" ${openFolds.has(unitFoldKey) ? "open" : ""}>
+      <summary>📖 ${units.length} bài — sắp xếp thứ tự <b class="chev">▾</b></summary>
+      <div class="oc-unit-list">
+        ${units.map((u, ui) => `
+          <div class="oc-subrow oc-subrow-indent">
+            <span class="oc-name">${esc(u)}</span>
+            <span class="oc-btns">
+              <button class="oc-arrow" data-unitup data-ch="${esc(ch)}" data-cat="${esc(c)}" data-unit="${esc(u)}" ${ui === 0 ? "disabled" : ""} title="Lên">▲</button>
+              <button class="oc-arrow" data-unitdown data-ch="${esc(ch)}" data-cat="${esc(c)}" data-unit="${esc(u)}" ${ui === units.length - 1 ? "disabled" : ""} title="Xuống">▼</button>
+            </span>
+          </div>`).join("")}
+      </div>
+    </details>` : ""}`;
+  }).join("");
+
   const renderRows = () => {
     listEl.innerHTML = orderArr.map((ch, i) => {
       const picked = locksMap[ch] || [];
+      const catFoldKey = "c:" + ch;
+      const hasSortableSub = catOrderMap[ch].length > 1 || catOrderMap[ch].some((c) => (unitOrderMap[ch + "||" + c] || []).length > 1);
       return `
       <div class="oc-row" data-ch="${esc(ch)}">
         <div class="oc-row-top">
@@ -1936,8 +1990,14 @@ function renderOrderChapters(main) {
               </label>`).join("")}
           </div>
         </details>
+        ${hasSortableSub ? `
+        <details class="oc-sub-fold" data-cat-fold-key="${esc(catFoldKey)}" ${openFolds.has(catFoldKey) ? "open" : ""}>
+          <summary>🗂 Chuyên mục &amp; bài <b class="chev">▾</b></summary>
+          <div class="oc-cat-body">${catUnitBodyHtml(ch)}</div>
+        </details>` : ""}
       </div>`;
     }).join("");
+
     $$("[data-up]", listEl).forEach((b) => b.addEventListener("click", () => {
       const i = +b.dataset.up;
       [orderArr[i - 1], orderArr[i]] = [orderArr[i], orderArr[i - 1]];
@@ -1956,6 +2016,41 @@ function renderOrderChapters(main) {
       const summary = cb.closest(".oc-lock-fold").querySelector("summary");
       const n = (locksMap[ch] || []).length;
       summary.innerHTML = `🔒 ${n ? `Cần ${n} đề` : "Không khoá"} <b class="chev">▾</b>`;
+    }));
+    $$("[data-catup]", listEl).forEach((b) => b.addEventListener("click", () => {
+      const ch = b.dataset.ch, c = b.dataset.cat;
+      const arr = catOrderMap[ch];
+      const i = arr.indexOf(c);
+      if (i > 0) [arr[i - 1], arr[i]] = [arr[i], arr[i - 1]];
+      renderRows();
+    }));
+    $$("[data-catdown]", listEl).forEach((b) => b.addEventListener("click", () => {
+      const ch = b.dataset.ch, c = b.dataset.cat;
+      const arr = catOrderMap[ch];
+      const i = arr.indexOf(c);
+      if (i > -1 && i < arr.length - 1) [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
+      renderRows();
+    }));
+    $$("[data-unitup]", listEl).forEach((b) => b.addEventListener("click", () => {
+      const key = b.dataset.ch + "||" + b.dataset.cat;
+      const arr = unitOrderMap[key];
+      const i = arr.indexOf(b.dataset.unit);
+      if (i > 0) [arr[i - 1], arr[i]] = [arr[i], arr[i - 1]];
+      renderRows();
+    }));
+    $$("[data-unitdown]", listEl).forEach((b) => b.addEventListener("click", () => {
+      const key = b.dataset.ch + "||" + b.dataset.cat;
+      const arr = unitOrderMap[key];
+      const i = arr.indexOf(b.dataset.unit);
+      if (i > -1 && i < arr.length - 1) [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
+      renderRows();
+    }));
+    // Nhớ mục nào đang mở/đóng để giữ nguyên qua các lần sắp xếp lại
+    $$("[data-cat-fold-key]", listEl).forEach((d) => d.addEventListener("toggle", () => {
+      if (d.open) openFolds.add(d.dataset.catFoldKey); else openFolds.delete(d.dataset.catFoldKey);
+    }));
+    $$("[data-unit-fold-key]", listEl).forEach((d) => d.addEventListener("toggle", () => {
+      if (d.open) openFolds.add(d.dataset.unitFoldKey); else openFolds.delete(d.dataset.unitFoldKey);
     }));
   };
   renderRows();
@@ -2009,18 +2104,28 @@ function renderOrderChapters(main) {
     const btn = $("#oc-save");
     btn.disabled = true; btn.textContent = "Đang lưu…";
     try {
-      const locksObj = {};
+      // Gộp vào dữ liệu hiện có — chỉ cập nhật phần thuộc môn đang sắp xếp, giữ nguyên các môn khác
+      const chaptersOfThisSubject = new Set(orderArr);
+      const mergedChapterOrder = [...CHAPTER_ORDER.filter((ch) => !chaptersOfThisSubject.has(ch)), ...orderArr];
+      const locksObj = { ...CHAPTER_LOCKS };
+      for (const ch of chaptersOfThisSubject) delete locksObj[ch];
       for (const ch of Object.keys(locksMap)) locksObj[ch] = { requireExamIds: locksMap[ch] };
+      const mergedCategoryOrder = { ...CATEGORY_ORDER, ...catOrderMap };
+      const mergedUnitOrder = { ...UNIT_ORDER, ...unitOrderMap };
       const rows = [
-        { key: "chapter_order", value: orderArr, updated_at: Date.now() },
+        { key: "chapter_order", value: mergedChapterOrder, updated_at: Date.now() },
         { key: "chapter_locks", value: locksObj, updated_at: Date.now() },
+        { key: "category_order", value: mergedCategoryOrder, updated_at: Date.now() },
+        { key: "unit_order", value: mergedUnitOrder, updated_at: Date.now() },
       ];
       for (const row of rows) {
         try { await DBX.remove("settings", "key", row.key); } catch (e0) { /* chưa có dòng cũ, bỏ qua */ }
         await DBX.insert("settings", row);
       }
-      CHAPTER_ORDER = orderArr;
+      CHAPTER_ORDER = mergedChapterOrder;
       CHAPTER_LOCKS = locksObj;
+      CATEGORY_ORDER = mergedCategoryOrder;
+      UNIT_ORDER = mergedUnitOrder;
       $("#oc-msg").textContent = "✓ Đã lưu thứ tự và khoá chương!";
       $("#oc-msg").classList.remove("hidden");
       toast("Đã lưu thay đổi");
@@ -2094,6 +2199,39 @@ function orderChapterKeys(tree) {
   const ordered = [...known, ...rest];
   if (all.includes("Chưa phân chương")) ordered.push("Chưa phân chương");
   return ordered;
+}
+
+/* Áp thứ tự admin đã tự sắp tay (nếu có) lên trước, phần còn lại giữ nguyên
+   thứ tự mặc định (fallback) đã được sắp sẵn trước khi truyền vào đây. */
+function applyCustomOrder(fallbackSorted, custom) {
+  const known = (custom || []).filter((k) => fallbackSorted.includes(k));
+  const rest = fallbackSorted.filter((k) => !known.includes(k));
+  return [...known, ...rest];
+}
+/* Thứ tự chuyên mục trong 1 chương: ưu tiên admin tự sắp (CATEGORY_ORDER[ch]),
+   phần chưa sắp thì theo danh mục mặc định (Chuyên đề, Thực tế, ...) rồi bảng chữ cái. */
+function orderCategoryKeys(ch, catKeysPresent) {
+  const catOrder = [...LESSON_CATEGORIES, "Khác"];
+  const fallbackSorted = [...catKeysPresent].sort(
+    (a, b) => (catOrder.indexOf(a) === -1 ? 99 : catOrder.indexOf(a)) - (catOrder.indexOf(b) === -1 ? 99 : catOrder.indexOf(b))
+  );
+  return applyCustomOrder(fallbackSorted, CATEGORY_ORDER[ch]);
+}
+/* Thứ tự các "Bài" (đơn vị) trong 1 chuyên mục: ưu tiên admin tự sắp (UNIT_ORDER[ch||cat]),
+   phần chưa sắp thì theo thứ tự tự nhiên (Bài 1, Bài 2, ... Bài 10). */
+function orderUnitKeys(ch, cat, unitNamesPresent) {
+  const fallbackSorted = [...unitNamesPresent].sort(naturalVi);
+  return applyCustomOrder(fallbackSorted, UNIT_ORDER[(ch || "") + "||" + (cat || "")]);
+}
+/* Tên các đơn vị "Bài" hiện có trong 1 danh sách video của 1 chuyên mục
+   (dùng để build danh sách cho màn Sắp xếp) */
+function getCategoryUnitNames(list) {
+  const seen = new Set(), names = [];
+  for (const l of list) {
+    const name = l.lesson || l.title;
+    if (!seen.has(name)) { seen.add(name); names.push(name); }
+  }
+  return names;
 }
 
 /* Chương có đang bị khoá theo điều kiện "phải làm xong các đề X, Y, Z" không?
@@ -2175,20 +2313,19 @@ function isChapterUnlockedForMe(chapterName) {
    - Video có trường lesson (vd "Bài 1 — Cực trị") → gộp chung dưới tiêu đề bài, các Phần xếp thứ tự
    - Video không có lesson → đứng độc lập như một bài đơn
    - Bài đơn và bài nhiều phần xen kẽ đúng thứ tự số (Bài 1, Bài 2, … Bài 10) */
-function renderCategoryUnits(list, lessonCard, foldPrefix) {
+function renderCategoryUnits(list, lessonCard, foldPrefix, ch, cat) {
   const groupMap = {};
   const singles = [];
   for (const l of list) {
     if (l.lesson) (groupMap[l.lesson] = groupMap[l.lesson] || []).push(l);
     else singles.push(l);
   }
-  const units = [
-    ...Object.entries(groupMap).map(([name, items]) => ({
-      name, group: true,
-      items: items.sort((a, b) => naturalVi(a.title, b.title)),
-    })),
-    ...singles.map((l) => ({ name: l.title, group: false, items: [l] })),
-  ].sort((a, b) => naturalVi(a.name, b.name));
+  const unitMap = {};
+  for (const [name, items] of Object.entries(groupMap)) {
+    unitMap[name] = { name, group: true, items: items.sort((a, b) => naturalVi(a.title, b.title)) };
+  }
+  for (const l of singles) unitMap[l.title] = { name: l.title, group: false, items: [l] };
+  const units = orderUnitKeys(ch, cat, Object.keys(unitMap)).map((n) => unitMap[n]);
 
   let html = "";
   let buf = [];
@@ -3047,22 +3184,27 @@ async function renderAdminAsync(main, tab) {
     } else {
       const tree = buildChapterTree(LESSONS);
       const chapterKeys = orderChapterKeys(tree);
-      const catOrder = [...LESSON_CATEGORIES, "Khác"];
       list.innerHTML = chapterKeys.map((ch) => {
-        const catKeys = Object.keys(tree[ch]).sort((a, b) => (catOrder.indexOf(a) === -1 ? 99 : catOrder.indexOf(a)) - (catOrder.indexOf(b) === -1 ? 99 : catOrder.indexOf(b)));
+        const catKeys = orderCategoryKeys(ch, Object.keys(tree[ch]));
         const chapterLessons = Object.values(tree[ch]).flat();
         return `
         <details class="chapter-block" data-fold="adminls:${esc(ch)}" ${foldIsOpen("adminls:" + ch, true) ? "open" : ""}>
           <summary class="chapter-head"><h3>📁 ${esc(ch)}</h3><span>${chapterLessons.length} bài <b class="chev">▾</b></span></summary>
           <div class="chapter-body">
-            ${catKeys.map((c) => `
-              <div class="cat-head" style="cursor:default">${esc(c)} <span style="font-weight:400;color:var(--pencil)">· ${tree[ch][c].length} bài</span></div>
-              ${tree[ch][c].slice().sort((a, b) => naturalVi(a.title, b.title)).map((l) => row(
+            ${catKeys.map((c) => {
+              const catList = tree[ch][c];
+              const unitNames = orderUnitKeys(ch, c, getCategoryUnitNames(catList));
+              const byUnit = {};
+              for (const l of catList) { const k = l.lesson || l.title; (byUnit[k] = byUnit[k] || []).push(l); }
+              const ordered = unitNames.flatMap((n) => (byUnit[n] || []).sort((a, b) => naturalVi(a.title, b.title)));
+              return `
+              <div class="cat-head" style="cursor:default">${esc(c)} <span style="font-weight:400;color:var(--pencil)">· ${catList.length} bài</span></div>
+              ${ordered.map((l) => row(
                 esc(l.title),
                 `${esc(l.subject)}${l.lesson ? " · " + esc(l.lesson) : ""} · ${l.docs.length} tài liệu · đăng bởi ${esc(l.uploader)}`,
                 `<span style="display:flex;gap:6px;flex-shrink:0"><button class="btn btn-outline btn-sm" data-edit-lesson="${l.id}">Sửa</button><button class="btn btn-danger btn-sm" data-del-lesson="${l.id}">Xoá</button></span>`
-              )).join("")}
-            `).join("")}
+              )).join("")}`;
+            }).join("")}
           </div>
         </details>`;
       }).join("");
