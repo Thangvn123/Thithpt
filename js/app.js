@@ -276,7 +276,7 @@ function getNotifItems() {
   const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
   const items = [];
   for (const n of NOTICES) {
-    items.push({ type: "notice", icon: "📣", title: n.message, time: +n.created_at || 0, target: null });
+    items.push({ type: "notice", icon: "📣", title: n.message, time: +n.created_at || 0, target: null, pinned: !!n.pinned });
   }
   const myExamIds = new Set(getVisibleExams().map((e) => e.id));
   const myLessonIdsVisible = new Set(getVisibleLessons().map((l) => l.id));
@@ -325,7 +325,7 @@ function getNotifItems() {
     }
   }
 
-  return items.sort((a, b) => b.time - a.time).slice(0, 20);
+  return items.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.time - a.time).slice(0, 20);
 }
 
 function updateNotifBadge() {
@@ -347,10 +347,10 @@ function setupNotif() {
       <div class="notif-head">🔔 Thông báo</div>
       ${items.length === 0 ? `<p class="notif-empty">Chưa có thông báo nào.</p>` : items.map((it, i) => `
         <button class="notif-item ${it.time > lastSeen ? "unseen" : ""}" data-nidx="${i}">
-          <span class="notif-icon">${it.icon}</span>
+          <span class="notif-icon">${it.pinned ? "📌" : it.icon}</span>
           <span class="notif-body">
             <span class="notif-title">${esc(it.title)}</span>
-            <span class="notif-time">${new Date(it.time).toLocaleString("vi-VN")}</span>
+            <span class="notif-time">${it.pinned ? "Đã ghim · " : ""}${new Date(it.time).toLocaleString("vi-VN")}</span>
           </span>
         </button>`).join("")}`;
     panel.classList.remove("hidden");
@@ -1341,8 +1341,10 @@ function spUnitsHtml(list, progMap) {
   }).join("");
 }
 
-function renderStudentProgress(main, username) {
+function renderStudentProgress(main, payload) {
   if (CURRENT_USER.role !== "admin") return go("exams");
+  if (typeof payload === "string") payload = { username: payload };
+  const { username, subject } = payload || {};
   const stu = USERS.find((u) => u.username === username);
   if (!stu) { main.innerHTML = `<div class="empty">Không tìm thấy học sinh này.</div>`; return; }
   const stuLessons = getVisibleLessonsFor(stu);
@@ -1361,9 +1363,60 @@ function renderStudentProgress(main, username) {
     return rs.length ? (rs.reduce((s, r) => s + r.score10, 0) / rs.length).toFixed(2) : "—";
   })();
 
+  const headCard = `
+    <div class="card" style="margin-bottom:18px">
+      <p class="eyebrow">TIẾN ĐỘ HỌC TẬP</p>
+      <h2 class="page-title" style="font-size:20px;margin:4px 0 14px">${esc(stu.name)} <span style="font-weight:400;color:var(--pencil);font-size:14px">(${esc(stu.username)})</span></h2>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div class="score-stamp" style="width:58px;height:58px;font-size:15px;flex-shrink:0">${pct}%</div>
+        <div style="font-size:13.5px;color:var(--pencil);line-height:1.7">
+          Đã xem <b style="color:var(--ink)">${watched.size}</b>/${totalLessons} bài giảng (tất cả các môn)
+          ${lastLesson ? `· gần nhất: <b style="color:var(--ink)">${esc(lastLesson.title)}</b> — <span title="${formatDateTimeVi(last.created_at)}">${relativeTimeVi(+last.created_at)}</span> <span style="color:var(--pencil)">(${formatDateTimeVi(+last.created_at)})</span>` : "· chưa xem bài nào"}<br/>
+          Đã thi <b style="color:var(--ink)">${myExamCount}</b> đề · điểm trung bình <b style="color:var(--red)">${myAvg}</b>
+        </div>
+      </div>
+      ${last && (Date.now() - (+last.created_at)) > 7 * 86400000 ? `<p class="restricted-note" style="margin-top:12px">⚠️ Đã hơn ${Math.floor((Date.now() - (+last.created_at)) / 86400000)} ngày học sinh này chưa xem bài giảng nào mới.</p>` : ""}
+    </div>`;
+
+  /* ============ MÀN 1: CHỌN MÔN / KHOÁ HỌC ============ */
+  if (!subject) {
+    const subjects = [...new Set(stuLessons.map((l) => l.subject))].sort(naturalVi);
+    main.innerHTML = `
+      <div style="max-width:720px;margin:0 auto">
+        ${stu.restricted ? `<p class="restricted-note">🔒 Tài khoản này đang bị giới hạn quyền xem — thống kê dưới đây chỉ tính trên nội dung được cấp phép.</p>` : ""}
+        <button class="btn btn-ghost btn-sm" id="sp-back" style="margin-bottom:16px">← Quay lại Quản trị</button>
+        ${headCard}
+        <p class="page-sub" style="margin-bottom:12px">Chọn một môn/khoá học để xem chi tiết tiến độ theo từng bài.</p>
+        ${subjects.length === 0 ? `<div class="empty">Chưa có bài giảng nào trong hệ thống.</div>` : `
+          <div class="course-grid">
+            ${subjects.map((s) => {
+              const ls = stuLessons.filter((l) => l.subject === s);
+              const nDone = ls.filter((l) => watched.has(l.id)).length;
+              const p = ls.length ? Math.round((nDone / ls.length) * 100) : 0;
+              return `
+              <div class="card hoverable course-card" data-subj="${esc(s)}" style="cursor:pointer">
+                <div class="course-thumb"><div class="course-thumb-fallback">📘</div></div>
+                <h3 class="card-title">${esc(s)}</h3>
+                <p class="card-meta">${ls.length} bài giảng</p>
+                <div class="chapter-progress-bar" style="margin-top:10px"><div class="chapter-progress-fill" style="width:${p}%"></div></div>
+                <p class="card-meta" style="margin-top:6px">${nDone}/${ls.length} đã học · ${p}%</p>
+              </div>`;
+            }).join("")}
+          </div>`}
+      </div>`;
+    $("#sp-back").addEventListener("click", () => go("admin", "progress"));
+    $$("[data-subj]", main).forEach((c) => c.addEventListener("click", () => go("studentprogress", { username, subject: c.dataset.subj })));
+    return;
+  }
+
+  /* ============ MÀN 2: CHI TIẾT THEO CHƯƠNG TRONG 1 MÔN ============ */
+  const subjLessons = stuLessons.filter((l) => l.subject === subject);
+  const subjWatched = subjLessons.filter((l) => watched.has(l.id)).length;
+  const subjPct = subjLessons.length ? Math.round((subjWatched / subjLessons.length) * 100) : 0;
+
   const catOrder = [...LESSON_CATEGORIES, "Khác"];
   const tree = {};
-  for (const l of stuLessons) {
+  for (const l of subjLessons) {
     const ch = l.chapter || "Chưa phân chương";
     const c = l.category || "Khác";
     tree[ch] = tree[ch] || {};
@@ -1374,29 +1427,26 @@ function renderStudentProgress(main, username) {
   main.innerHTML = `
     <div style="max-width:720px;margin:0 auto">
       ${stu.restricted ? `<p class="restricted-note">🔒 Tài khoản này đang bị giới hạn quyền xem — thống kê dưới đây chỉ tính trên nội dung được cấp phép.</p>` : ""}
-      <button class="btn btn-ghost btn-sm" id="sp-back" style="margin-bottom:16px">← Quay lại Quản trị</button>
+      <button class="btn btn-ghost btn-sm" id="sp-back-subj" style="margin-bottom:16px">← Chọn môn khác</button>
 
       <div class="card" style="margin-bottom:18px">
-        <p class="eyebrow">TIẾN ĐỘ HỌC TẬP</p>
+        <p class="eyebrow">MÔN ${esc(subject).toUpperCase()}</p>
         <h2 class="page-title" style="font-size:20px;margin:4px 0 14px">${esc(stu.name)} <span style="font-weight:400;color:var(--pencil);font-size:14px">(${esc(stu.username)})</span></h2>
         <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-          <div class="score-stamp" style="width:58px;height:58px;font-size:15px;flex-shrink:0">${pct}%</div>
+          <div class="score-stamp" style="width:58px;height:58px;font-size:15px;flex-shrink:0">${subjPct}%</div>
           <div style="font-size:13.5px;color:var(--pencil);line-height:1.7">
-            Đã xem <b style="color:var(--ink)">${watched.size}</b>/${totalLessons} bài giảng
-            ${lastLesson ? `· gần nhất: <b style="color:var(--ink)">${esc(lastLesson.title)}</b> — <span title="${formatDateTimeVi(last.created_at)}">${relativeTimeVi(+last.created_at)}</span> <span style="color:var(--pencil)">(${formatDateTimeVi(+last.created_at)})</span>` : "· chưa xem bài nào"}<br/>
-            Đã thi <b style="color:var(--ink)">${myExamCount}</b> đề · điểm trung bình <b style="color:var(--red)">${myAvg}</b>
+            Đã xem <b style="color:var(--ink)">${subjWatched}</b>/${subjLessons.length} bài giảng môn ${esc(subject)}
           </div>
         </div>
-        ${last && (Date.now() - (+last.created_at)) > 7 * 86400000 ? `<p class="restricted-note" style="margin-top:12px">⚠️ Đã hơn ${Math.floor((Date.now() - (+last.created_at)) / 86400000)} ngày học sinh này chưa xem bài giảng nào mới.</p>` : ""}
       </div>
 
-      ${chapterKeys.length === 0 ? `<div class="empty">Chưa có bài giảng nào trong hệ thống.</div>` : chapterKeys.map((ch) => {
+      ${chapterKeys.length === 0 ? `<div class="empty">Môn này chưa có bài giảng nào.</div>` : chapterKeys.map((ch) => {
         const catKeys = Object.keys(tree[ch]).sort((a, b) => (catOrder.indexOf(a) === -1 ? 99 : catOrder.indexOf(a)) - (catOrder.indexOf(b) === -1 ? 99 : catOrder.indexOf(b)));
         const chapterLessons = Object.values(tree[ch]).flat();
         const chDone = chapterLessons.filter((l) => watched.has(l.id)).length;
         const chPct = chapterLessons.length ? Math.round((chDone / chapterLessons.length) * 100) : 0;
         return `
-        <details class="chapter-block" data-fold="sp:${esc(ch)}" ${foldIsOpen("sp:" + ch, true) ? "open" : ""}>
+        <details class="chapter-block" data-fold="sp:${esc(subject)}:${esc(ch)}" ${foldIsOpen("sp:" + subject + ":" + ch, true) ? "open" : ""}>
           <summary class="chapter-head">
             <h3>📁 ${esc(ch)}</h3><span>${chDone}/${chapterLessons.length} đã học <b class="chev">▾</b></span>
             <div class="chapter-progress-bar"><div class="chapter-progress-fill" style="width:${chPct}%"></div></div>
@@ -1413,7 +1463,7 @@ function renderStudentProgress(main, username) {
     </div>`;
 
   bindFoldMemory(main);
-  $("#sp-back").addEventListener("click", () => go("admin", "progress"));
+  $("#sp-back-subj").addEventListener("click", () => go("studentprogress", { username }));
 }
 
 /* =====================================================
@@ -1838,7 +1888,7 @@ function renderOrderChapters(main) {
     tree[ch] = tree[ch] || {};
     (tree[ch][l.category || "Khác"] = tree[ch][l.category || "Khác"] || []).push(l);
   }
-  let orderArr = orderChapterKeys(tree).filter((ch) => ch !== "Chưa phân chương");
+  let orderArr = orderChapterKeys(tree);
   const locksMap = {}; // { chapterName: [examId, examId, ...] }
   for (const ch of orderArr) {
     const cfg = CHAPTER_LOCKS[ch];
@@ -3117,15 +3167,17 @@ async function renderAdminAsync(main, tab) {
         </div>
         <button class="btn btn-primary btn-sm" id="notice-send">📣 Gửi thông báo</button>
       </div>
-      ${NOTICES.length ? [...NOTICES].sort((a, b) => (+b.created_at) - (+a.created_at)).map((n) => `
-        <div class="admin-row">
+      ${NOTICES.length ? [...NOTICES].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (+b.created_at) - (+a.created_at)).map((n) => `
+        <div class="admin-row ${n.pinned ? "notice-pinned-row" : ""}">
           <div class="info">
-            <div class="t">📣 ${esc(n.message)}</div>
+            <div class="t">${n.pinned ? "📌" : "📣"} ${esc(n.message)}${n.pinned ? ` <span class="chip chip-gold">Đã ghim</span>` : ""}</div>
             <div class="s">${new Date(+n.created_at).toLocaleString("vi-VN")} · gửi bởi ${esc(n.author || "admin")}</div>
           </div>
-          <button class="btn btn-danger btn-sm" data-del-notice="${n.id}">Xoá</button>
+          <span style="display:flex;gap:6px;flex-shrink:0">
+            <button class="btn btn-outline btn-sm" data-pin-notice="${n.id}">${n.pinned ? "📌 Bỏ ghim" : "📌 Ghim"}</button>
+            <button class="btn btn-danger btn-sm" data-del-notice="${n.id}">Xoá</button>
+          </span>
         </div>`).join("") : `<div class="admin-row"><span class="s">Chưa có thông báo nào từ admin.</span></div>`}`;
-
     $("#notice-send").addEventListener("click", async () => {
       const msg = $("#notice-text").value.trim();
       if (!msg) return toast("Hãy nhập nội dung thông báo", true);
@@ -3138,6 +3190,20 @@ async function renderAdminAsync(main, tab) {
         renderAdmin(main, "notices");
       } catch (e) { toast("Lỗi: " + e.message + " — kiểm tra đã tạo bảng notices chưa", true); }
     });
+    $$("[data-pin-notice]").forEach((b) => b.addEventListener("click", async () => {
+      const n = NOTICES.find((x) => x.id === b.dataset.pinNotice);
+      if (!n) return;
+      const updated = { ...n, pinned: !n.pinned };
+      b.disabled = true;
+      try {
+        await DBX.remove("notices", "id", n.id);
+        await DBX.insert("notices", updated);
+        NOTICES = NOTICES.map((x) => (x.id === n.id ? updated : x));
+        toast(updated.pinned ? "Đã ghim thông báo" : "Đã bỏ ghim");
+        updateNotifBadge();
+        renderAdmin(main, "notices");
+      } catch (e) { b.disabled = false; toast("Lỗi: " + e.message, true); }
+    }));
     $$("[data-del-notice]").forEach((b) => b.addEventListener("click", async () => {
       try {
         await DBX.remove("notices", "id", b.dataset.delNotice);
