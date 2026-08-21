@@ -1315,6 +1315,27 @@ img, video, iframe { max-width: 100%; }
 .oc-lock-opt { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; }
 .oc-lock-opt input { width: 16px; height: 16px; accent-color: var(--gold); flex-shrink: 0; }
 
+/* ---------- Sắp xếp chuyên mục & bài trong 1 chương (admin) ---------- */
+.oc-sub-fold { margin-left: 28px; margin-top: 6px; }
+.oc-sub-fold summary {
+  font-size: 12.5px; font-weight: 700; color: var(--pen);
+  display: flex; align-items: center; gap: 4px; cursor: pointer;
+}
+.oc-sub-fold summary .chev { margin-left: 2px; font-size: 10px; }
+.oc-cat-body {
+  margin-top: 8px; padding: 10px; border-radius: 8px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.oc-subrow { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.oc-subrow .oc-name { font-size: 13px; font-weight: 600; }
+.oc-subrow-indent { margin-left: 18px; }
+.oc-subrow-indent .oc-name { font-weight: 400; font-size: 12.5px; color: var(--text); }
+.oc-unit-fold { margin: 2px 0 6px 18px; }
+.oc-unit-fold summary { font-size: 11.5px; font-weight: 600; color: var(--pencil); display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.oc-unit-fold summary .chev { margin-left: 2px; font-size: 9px; }
+.oc-unit-list { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+
 /* ---------- Checklist đề cần hoàn thành (học sinh xem ở chương bị khoá) ---------- */
 .lock-checklist { text-align: left; max-width: 320px; margin: 0 auto; display: flex; flex-direction: column; gap: 6px; }
 .lock-check-row {
