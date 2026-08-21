@@ -1351,6 +1351,7 @@ img, video, iframe { max-width: 100%; }
 }
 .report-row.report-resolved { opacity: .55; }
 .report-row.report-resolved .t { text-decoration: line-through; }
+.notice-pinned-row { background: var(--gold-soft) !important; }
 
 /* ---------- Banner nhắc vào lại toàn màn hình ---------- */
 .fs-reenter-banner {
