@@ -1359,8 +1359,9 @@ function renderStudentProgress(main, payload) {
   const stu = USERS.find((u) => u.username === username);
   if (!stu) { main.innerHTML = `<div class="empty">Không tìm thấy học sinh này.</div>`; return; }
   const stuLessons = getVisibleLessonsFor(stu);
+  const visibleIds = new Set(stuLessons.map((l) => l.id));
 
-  const mine = PROGRESS.filter((p) => p.username === username);
+  const mine = PROGRESS.filter((p) => p.username === username && visibleIds.has(p.lesson_id));
   const progMap = new Map(mine.map((p) => [p.lesson_id, p]));
   const watched = new Map(mine.map((p) => [p.lesson_id, +p.created_at]));
   const totalLessons = stuLessons.length;
@@ -3224,15 +3225,17 @@ async function renderAdminAsync(main, tab) {
     ));
   } else if (tab === "progress") {
     const students = USERS.filter((u) => u.role !== "admin");
-    const totalLessons = LESSONS.length;
     list.innerHTML = students.length ? students.map((u) => {
-      const mine = PROGRESS.filter((p) => p.username === u.username);
+      const visibleForU = getVisibleLessonsFor(u);
+      const totalLessons = visibleForU.length;
+      const visibleIds = new Set(visibleForU.map((l) => l.id));
+      const mine = PROGRESS.filter((p) => p.username === u.username && visibleIds.has(p.lesson_id));
       const watchedCount = new Set(mine.map((p) => p.lesson_id)).size;
       const last = mine.slice().sort((a, b) => (+b.created_at) - (+a.created_at))[0];
       const lastLesson = last ? LESSONS.find((l) => l.id === last.lesson_id) : null;
       const pct = totalLessons ? Math.round((watchedCount / totalLessons) * 100) : 0;
       return row(
-        `${esc(u.name)} <span style="font-family:var(--font-mono);font-weight:400;color:var(--pencil)">(${esc(u.username)})</span>`,
+        `${esc(u.name)} <span style="font-family:var(--font-mono);font-weight:400;color:var(--pencil)">(${esc(u.username)})</span>${u.restricted ? '<span class="badge-restricted">🔒 GIỚI HẠN</span>' : ""}`,
         `Đã xem ${watchedCount}/${totalLessons} bài (${pct}%)${lastLesson ? " · gần nhất: " + esc(lastLesson.title) : totalLessons ? " · chưa xem bài nào" : ""}`,
         `<button class="btn btn-outline btn-sm" data-view-progress="${esc(u.username)}">Xem chi tiết</button>`
       );
