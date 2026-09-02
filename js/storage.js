@@ -61,6 +61,21 @@ const DBX = {
     }
   },
 
+  /* Ghi đè 1 dòng theo khoá chính — an toàn hơn xoá-rồi-ghi (không có khoảng hở giữa 2 bước,
+     nên nếu mạng bị gián đoạn thì dữ liệu cũ vẫn còn nguyên, không bao giờ bị mất trắng). */
+  async upsert(table, row, conflictCol) {
+    if (!this.remote) { LocalDB.remove(table, conflictCol, row[conflictCol]); return LocalDB.insert(table, row); }
+    const res = await fetch(this.base + table + "?on_conflict=" + conflictCol, {
+      method: "POST",
+      headers: { ...this.headers, Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(row),
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error("SQL: không lưu được vào " + table + " — " + t.slice(0, 180));
+    }
+  },
+
   async remove(table, col, value) {
     if (!this.remote) return LocalDB.remove(table, col, value);
     const res = await fetch(this.base + table + "?" + col + "=eq." + encodeURIComponent(value), {

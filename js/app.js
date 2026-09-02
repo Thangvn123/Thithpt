@@ -197,10 +197,7 @@ function recordProgress(lessonId, watchedSeconds, durationSeconds) {
   };
   PROGRESS = PROGRESS.filter((p) => p.id !== id);
   PROGRESS.push(row);
-  (async () => {
-    try { await DBX.remove("progress", "id", id); } catch (e) { /* chưa có dòng cũ, bỏ qua */ }
-    try { await DBX.insert("progress", row); } catch (e) { console.warn("Không lưu được lịch sử học:", e.message); }
-  })();
+  DBX.upsert("progress", row, "id").catch((e) => console.warn("Không lưu được lịch sử học:", e.message));
 }
 
 /* Gắn theo dõi tiến độ xem cho thẻ <video> HTML5 (video tải trực tiếp / link .mp4…) — báo cáo mỗi 5 giây xem thực tế */
