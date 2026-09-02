@@ -3,7 +3,7 @@
 ===================================================== */
 
 /* ---------- Trạng thái ---------- */
-let USERS = [], EXAMS = [], LESSONS = [], RESULTS = [], PROGRESS = [], NOTICES = [], COMMENTS = [], REPORTS = [], CHAPTER_ORDER = [], CHAPTER_LOCKS = {}, ROLES = [];
+let USERS = [], EXAMS = [], LESSONS = [], RESULTS = [], PROGRESS = [], NOTICES = [], COMMENTS = [], REPORTS = [], CHAPTER_ORDER = [], CHAPTER_LOCKS = {};
 let CATEGORY_ORDER = {}, UNIT_ORDER = {};
 let PRESENCE = [];
 let QA_QUESTIONS = [], QA_MESSAGES = [];
@@ -92,9 +92,7 @@ async function loadAllTables() {
     CATEGORY_ORDER = (catRow && catRow.value) || {};
     const unitRow = rows.find((r) => r.key === "unit_order");
     UNIT_ORDER = (unitRow && unitRow.value) || {};
-    const roleRow = rows.find((r) => r.key === "access_roles");
-    ROLES = (roleRow && roleRow.value) || [];
-  } catch (err) { CHAPTER_ORDER = []; CHAPTER_LOCKS = {}; CATEGORY_ORDER = {}; UNIT_ORDER = {}; ROLES = []; console.warn("Chưa có bảng settings (chạy SQL bổ sung để lưu thứ tự/khoá chương):", err.message); }
+  } catch (err) { CHAPTER_ORDER = []; CHAPTER_LOCKS = {}; CATEGORY_ORDER = {}; UNIT_ORDER = {}; console.warn("Chưa có bảng settings (chạy SQL bổ sung để lưu thứ tự/khoá chương):", err.message); }
 
   // Tạo admin mặc định nếu hệ thống chưa có
   if (!USERS.some((x) => x.role === "admin")) {
@@ -148,8 +146,6 @@ async function sync(...tables) {
         CATEGORY_ORDER = (catRow && catRow.value) || {};
         const unitRow = rows.find((r) => r.key === "unit_order");
         UNIT_ORDER = (unitRow && unitRow.value) || {};
-        const roleRow = rows.find((r) => r.key === "access_roles");
-        ROLES = (roleRow && roleRow.value) || [];
       }
     } catch (e) { console.error(e); }
   }
@@ -1490,7 +1486,6 @@ function renderStudentAccess(main, username) {
     restricted: !!stu.restricted,
     exams: new Set(stu.allowed_exams || []),
     lessons: new Set(stu.allowed_lessons || []),
-    roles: new Set(stu.allowed_roles || []),
   };
 
   const tree = buildChapterTree(LESSONS);
@@ -1511,21 +1506,7 @@ function renderStudentAccess(main, username) {
         <div id="sa-body" class="${state.restricted ? "" : "hidden"}">
           <div class="sa-section">
             <div class="sa-section-head">
-              <p style="font-weight:800;color:var(--ink)">🎓 Vai trò (cấp quyền theo môn)</p>
-            </div>
-            <div class="sa-options">
-              ${ROLES.length === 0 ? `<p class="hint">Chưa có vai trò nào — vào mục <b>🎓 Vai trò</b> trong Quản trị để tạo vai trò cho từng môn/khoá.</p>` : ROLES.map((r) => `
-                <label class="sa-opt">
-                  <input type="checkbox" data-sa-role="${r.id}" ${state.roles.has(r.id) ? "checked" : ""} />
-                  ${esc(r.name)} <span style="color:var(--pencil)">· ${(r.subjects || []).map(esc).join(", ")}</span>
-                </label>`).join("")}
-            </div>
-            <p class="hint" style="margin-top:8px">Gán vai trò để cấp quyền xem toàn bộ đề thi + bài giảng thuộc các môn của vai trò đó. Có thể chọn nhiều vai trò cùng lúc (vd cấp cả "Toán 2k7" và "Toán 2k8").</p>
-          </div>
-
-          <div class="sa-section">
-            <div class="sa-section-head">
-              <p style="font-weight:800;color:var(--ink)">📝 Đề thi được phép xem lẻ <span style="font-weight:400;color:var(--pencil);font-size:12px">(ngoài các môn theo vai trò ở trên)</span></p>
+              <p style="font-weight:800;color:var(--ink)">📝 Đề thi được phép xem</p>
               <span><button class="btn btn-ghost btn-sm" id="sa-exam-all">Chọn hết</button><button class="btn btn-ghost btn-sm" id="sa-exam-none">Bỏ hết</button></span>
             </div>
             <div class="sa-options">
@@ -1563,9 +1544,6 @@ function renderStudentAccess(main, username) {
   $("#sa-restricted").addEventListener("change", (e) => {
     $("#sa-body").classList.toggle("hidden", !e.target.checked);
   });
-  $$("[data-sa-role]", main).forEach((cb) => cb.addEventListener("change", () => {
-    if (cb.checked) state.roles.add(cb.dataset.saRole); else state.roles.delete(cb.dataset.saRole);
-  }));
   $$("[data-sa-exam]", main).forEach((cb) => cb.addEventListener("change", () => {
     if (cb.checked) state.exams.add(cb.dataset.saExam); else state.exams.delete(cb.dataset.saExam);
   }));
@@ -1581,16 +1559,16 @@ function renderStudentAccess(main, username) {
     const err = $("#sa-err");
     err.classList.add("hidden");
     const restricted = $("#sa-restricted").checked;
-    const updated = { ...stu, restricted, allowed_exams: [...state.exams], allowed_lessons: [...state.lessons], allowed_roles: [...state.roles] };
+    const updated = { ...stu, restricted, allowed_exams: [...state.exams], allowed_lessons: [...state.lessons] };
     const btn = $("#sa-save");
     btn.disabled = true; btn.textContent = "Đang lưu…";
     try {
       await DBX.remove("users", "username", stu.username);
       try { await DBX.insert("users", updated); }
       catch (e1) {
-        // CSDL chưa có cột restricted/allowed_exams/allowed_lessons/allowed_roles → thử lại không kèm các trường mới
+        // CSDL chưa có cột restricted/allowed_exams/allowed_lessons → thử lại không kèm các trường mới
         const fb = { ...updated };
-        delete fb.restricted; delete fb.allowed_exams; delete fb.allowed_lessons; delete fb.allowed_roles;
+        delete fb.restricted; delete fb.allowed_exams; delete fb.allowed_lessons;
         await DBX.insert("users", fb);
         throw new Error("CSDL chưa có cột lưu giới hạn quyền xem — hãy chạy SQL bổ sung rồi thử lại.");
       }
@@ -2284,46 +2262,19 @@ function buildChapterTree(lessonsArr) {
   return tree;
 }
 
-/* ---------- Vai trò theo môn học (admin tạo, gán cho học sinh) ----------
-   Mỗi vai trò = { id, name, subjects:[...] }. Gán 1 vai trò cho học sinh
-   nghĩa là học sinh đó xem được TẤT CẢ đề/bài giảng thuộc các môn trong
-   vai trò đó — kể cả khi có nhiều môn trùng tên nhưng khác khoá (vd
-   "Toán 2k7" và "Toán 2k8" là 2 chuỗi subject khác nhau → 2 vai trò khác nhau,
-   admin có thể gán 1 hoặc cả 2 vai trò cho từng học sinh). */
-function getAllSubjects() {
-  const set = new Set();
-  EXAMS.forEach((e) => e.subject && set.add(e.subject));
-  LESSONS.forEach((l) => l.subject && set.add(l.subject));
-  return [...set].sort(naturalVi);
-}
-async function saveRoles(rolesArr) {
-  const row = { key: "access_roles", value: rolesArr, updated_at: Date.now() };
-  try { await DBX.remove("settings", "key", "access_roles"); } catch (e0) { /* chưa có dòng cũ, bỏ qua */ }
-  await DBX.insert("settings", row);
-}
-function getAllowedSubjectsFor(u) {
-  const roleIds = new Set((u && u.allowed_roles) || []);
-  const subjects = new Set();
-  for (const r of ROLES) if (roleIds.has(r.id)) (r.subjects || []).forEach((s) => subjects.add(s));
-  return subjects;
-}
-
 /* ---------- Giới hạn quyền xem theo từng tài khoản ----------
    Mặc định (restricted=false hoặc chưa set): xem toàn bộ như cũ.
    Khi admin bật restricted=true cho 1 tài khoản, họ CHỈ thấy đúng
-   những đề/bài giảng nằm trong allowed_exams / allowed_lessons, HOẶC
-   thuộc môn học nằm trong 1 trong các vai trò (allowed_roles) được cấp. */
+   những đề/bài giảng nằm trong allowed_exams / allowed_lessons. */
 function getVisibleExamsFor(u) {
   if (!u || u.role === "admin" || !u.restricted) return EXAMS;
   const allowed = new Set(u.allowed_exams || []);
-  const subjects = getAllowedSubjectsFor(u);
-  return EXAMS.filter((e) => allowed.has(e.id) || subjects.has(e.subject));
+  return EXAMS.filter((e) => allowed.has(e.id));
 }
 function getVisibleLessonsFor(u) {
   if (!u || u.role === "admin" || !u.restricted) return LESSONS;
   const allowed = new Set(u.allowed_lessons || []);
-  const subjects = getAllowedSubjectsFor(u);
-  return LESSONS.filter((l) => allowed.has(l.id) || subjects.has(l.subject));
+  return LESSONS.filter((l) => allowed.has(l.id));
 }
 function getVisibleExams() { return getVisibleExamsFor(CURRENT_USER); }
 function getVisibleLessons() { return getVisibleLessonsFor(CURRENT_USER); }
@@ -3090,7 +3041,7 @@ function renderAdmin(main, tab) { renderAdminAsync(main, tab); }
 async function renderAdminAsync(main, tab) {
   if (CURRENT_USER.role !== "admin") return go("exams");
   if (tab === undefined) {
-    await syncView(main, ["users", "exams", "lessons", "results", "notices", "progress", "question_reports", "settings"]);
+    await syncView(main, ["users", "exams", "lessons", "results", "notices", "progress", "question_reports"]);
     if (VIEW !== "admin") return;
   }
   tab = tab || "users";
@@ -3108,7 +3059,7 @@ async function renderAdminAsync(main, tab) {
     </div>
 
     <div class="upload-tabs">
-      ${[["users", "Tài khoản"], ["roles", "🎓 Vai trò"], ["exams", "Đề thi"], ["lessons", "Bài giảng"], ["results", "Lượt thi"], ["progress", "📊 Tiến độ"], ["reports", "🚩 Báo lỗi"], ["notices", "📣 Thông báo"]]
+      ${[["users", "Tài khoản"], ["exams", "Đề thi"], ["lessons", "Bài giảng"], ["results", "Lượt thi"], ["progress", "📊 Tiến độ"], ["reports", "🚩 Báo lỗi"], ["notices", "📣 Thông báo"]]
         .map(([k, l]) => `<button class="tab-btn ${tab === k ? "active" : ""}" data-atab="${k}">${l}</button>`).join("")}
     </div>
 
@@ -3204,67 +3155,6 @@ async function renderAdminAsync(main, tab) {
           toast("Đã xoá tài khoản");
         } catch (e) { toast("Lỗi xoá: " + e.message, true); }
         renderAdmin(main, "users");
-      })
-    ));
-  } else if (tab === "roles") {
-    const allSubjects = getAllSubjects();
-    list.innerHTML = `
-      <div style="padding:16px;border-bottom:1px solid var(--line)">
-        <p style="font-weight:800;color:var(--ink);margin-bottom:4px">+ Tạo vai trò mới</p>
-        <p class="hint" style="margin-bottom:10px">Vai trò gom nhóm các môn học lại với nhau. Gán vai trò cho học sinh (ở mục 🔒 Giới hạn) để cấp quyền xem đúng những môn đó — ví dụ tạo riêng "Toán 2k7" và "Toán 2k8" cho 2 khoá khác nhau, rồi cấp 1 hoặc cả 2 vai trò tuỳ từng học sinh.</p>
-        <div class="field" style="margin-bottom:10px"><label>Tên vai trò</label><input id="nr-name" placeholder="vd: Toán 2k7" /></div>
-        <div class="field" style="margin-bottom:0">
-          <label>Các môn được xem <span style="font-weight:400;color:var(--pencil)">(chọn 1 hoặc nhiều môn)</span></label>
-          <div class="sa-options" style="max-height:240px">
-            ${allSubjects.length === 0 ? `<p class="hint">Chưa có môn học nào trong hệ thống — hãy tải đề thi hoặc bài giảng lên trước.</p>` : allSubjects.map((s) => `
-              <label class="sa-opt"><input type="checkbox" data-nr-subject="${esc(s)}" /> ${esc(s)}</label>`).join("")}
-          </div>
-        </div>
-        <p id="nr-err" class="error-box hidden" style="margin-top:10px"></p>
-        <button class="btn btn-primary btn-sm" id="nr-create" style="margin-top:10px">Tạo vai trò</button>
-      </div>
-      <div id="roles-list"></div>`;
-
-    $("#nr-create").addEventListener("click", async () => {
-      const errEl = $("#nr-err");
-      errEl.classList.add("hidden");
-      const name = $("#nr-name").value.trim();
-      const subjects = $$("[data-nr-subject]", main).filter((cb) => cb.checked).map((cb) => cb.dataset.nrSubject);
-      if (!name) { errEl.textContent = "Vui lòng đặt tên cho vai trò."; errEl.classList.remove("hidden"); return; }
-      if (!subjects.length) { errEl.textContent = "Vui lòng chọn ít nhất 1 môn học cho vai trò này."; errEl.classList.remove("hidden"); return; }
-      if (ROLES.some((r) => r.name.toLowerCase() === name.toLowerCase())) { errEl.textContent = "Vai trò này đã tồn tại, hãy đặt tên khác."; errEl.classList.remove("hidden"); return; }
-      const btn = $("#nr-create");
-      btn.disabled = true; btn.textContent = "Đang tạo…";
-      try {
-        const newRole = { id: "role_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), name, subjects, createdAt: Date.now() };
-        const updated = [...ROLES, newRole];
-        await saveRoles(updated);
-        ROLES = updated;
-        toast(`Đã tạo vai trò "${name}"`);
-        renderAdmin(main, "roles");
-      } catch (e) {
-        btn.disabled = false; btn.textContent = "Tạo vai trò";
-        errEl.textContent = "Không tạo được vai trò: " + e.message;
-        errEl.classList.remove("hidden");
-      }
-    });
-
-    $("#roles-list").innerHTML = ROLES.length ? ROLES.map((r) => row(
-      esc(r.name),
-      `Môn: ${(r.subjects || []).map(esc).join(", ") || "—"} · ${USERS.filter((u) => (u.allowed_roles || []).includes(r.id)).length} học sinh đang dùng`,
-      `<span style="display:flex;gap:6px;flex-shrink:0"><button class="btn btn-outline btn-sm" data-edit-role="${r.id}">Sửa</button><button class="btn btn-danger btn-sm" data-del-role="${r.id}">Xoá</button></span>`
-    )).join("") : `<div class="admin-row"><span class="s">Chưa có vai trò nào.</span></div>`;
-
-    $$("[data-edit-role]").forEach((b) => b.addEventListener("click", () => openEditRoleModal(b.dataset.editRole, main)));
-    $$("[data-del-role]").forEach((b) => b.addEventListener("click", () =>
-      confirmModal("Xoá vai trò?", "Học sinh đang được cấp vai trò này sẽ không còn thấy các môn thuộc vai trò này nữa (trừ khi có quyền xem riêng khác).", async () => {
-        try {
-          const updated = ROLES.filter((r) => r.id !== b.dataset.delRole);
-          await saveRoles(updated);
-          ROLES = updated;
-          toast("Đã xoá vai trò");
-        } catch (e) { toast("Lỗi xoá: " + e.message, true); }
-        renderAdmin(main, "roles");
       })
     ));
   } else if (tab === "exams") {
@@ -3537,60 +3427,6 @@ function renderProfile(main) {
 }
 
 
-
-function openEditRoleModal(roleId, main) {
-  const r = ROLES.find((x) => x.id === roleId);
-  if (!r) return;
-  const allSubjects = getAllSubjects();
-  const selected = new Set(r.subjects || []);
-  $("#modal-root").innerHTML = `
-    <div class="modal-overlay" id="er-overlay">
-      <div class="modal">
-        <h3>🎓 Sửa vai trò</h3>
-        <div class="field">
-          <label>Tên vai trò</label>
-          <input id="er-name" value="${esc(r.name)}" />
-        </div>
-        <div class="field" style="margin-bottom:0">
-          <label>Các môn được xem</label>
-          <div class="sa-options" style="max-height:240px">
-            ${allSubjects.length === 0 ? `<p class="hint">Chưa có môn học nào trong hệ thống.</p>` : allSubjects.map((s) => `
-              <label class="sa-opt"><input type="checkbox" data-er-subject="${esc(s)}" ${selected.has(s) ? "checked" : ""} /> ${esc(s)}</label>`).join("")}
-          </div>
-        </div>
-        <p id="er-err" class="error-box hidden" style="margin-top:10px"></p>
-        <div class="modal-actions">
-          <button class="btn btn-outline" id="er-cancel">Huỷ</button>
-          <button class="btn btn-primary" id="er-save">Lưu</button>
-        </div>
-      </div>
-    </div>`;
-  $("#er-overlay").addEventListener("click", (e) => { if (e.target.id === "er-overlay") $("#modal-root").innerHTML = ""; });
-  $("#er-cancel").addEventListener("click", () => { $("#modal-root").innerHTML = ""; });
-  $("#er-save").addEventListener("click", async () => {
-    const errEl = $("#er-err");
-    errEl.classList.add("hidden");
-    const name = $("#er-name").value.trim();
-    const subjects = $$("[data-er-subject]").filter((cb) => cb.checked).map((cb) => cb.dataset.erSubject);
-    if (!name) { errEl.textContent = "Vui lòng đặt tên cho vai trò."; errEl.classList.remove("hidden"); return; }
-    if (!subjects.length) { errEl.textContent = "Vui lòng chọn ít nhất 1 môn học."; errEl.classList.remove("hidden"); return; }
-    if (ROLES.some((x) => x.id !== roleId && x.name.toLowerCase() === name.toLowerCase())) { errEl.textContent = "Tên vai trò này đã được dùng, hãy đặt tên khác."; errEl.classList.remove("hidden"); return; }
-    const btn = $("#er-save");
-    btn.disabled = true; btn.textContent = "Đang lưu…";
-    try {
-      const updated = ROLES.map((x) => x.id === roleId ? { ...x, name, subjects } : x);
-      await saveRoles(updated);
-      ROLES = updated;
-      $("#modal-root").innerHTML = "";
-      toast(`Đã lưu vai trò "${name}"`);
-      renderAdmin(main, "roles");
-    } catch (e) {
-      btn.disabled = false; btn.textContent = "Lưu";
-      errEl.textContent = "Không lưu được: " + e.message;
-      errEl.classList.remove("hidden");
-    }
-  });
-}
 
 function openChangeRoleModal(username, main) {
   const u = USERS.find((x) => x.username === username);
