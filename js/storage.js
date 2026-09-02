@@ -31,9 +31,21 @@ const DBX = {
   async list(table, orderCol) {
     if (!this.remote) return LocalDB.list(table);
     const order = orderCol || "created_at";
-    const res = await fetch(this.base + table + "?select=*&order=" + order + ".asc", { headers: this.headers });
-    if (!res.ok) throw new Error("SQL: không đọc được bảng " + table + " (HTTP " + res.status + ")");
-    return res.json();
+    const pageSize = 1000; // PostgREST (Supabase) chỉ trả tối đa 1000 dòng/lần mặc định — phải phân trang mới lấy hết
+    let all = [];
+    let from = 0;
+    while (true) {
+      const to = from + pageSize - 1;
+      const res = await fetch(this.base + table + "?select=*&order=" + order + ".asc", {
+        headers: { ...this.headers, Range: from + "-" + to },
+      });
+      if (!res.ok && res.status !== 206) throw new Error("SQL: không đọc được bảng " + table + " (HTTP " + res.status + ")");
+      const page = await res.json();
+      all = all.concat(page);
+      if (page.length < pageSize) break; // trang cuối rồi, ít hơn 1 trang đầy nghĩa là hết dữ liệu
+      from += pageSize;
+    }
+    return all;
   },
 
   async insert(table, row) {
