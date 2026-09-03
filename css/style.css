@@ -1440,3 +1440,36 @@ img, video, iframe { max-width: 100%; }
 .sa-opt-indent { padding-left: 6px; }
 .sa-chapter-label { font-weight: 800; font-size: 12.5px; color: var(--ink); margin-top: 10px; }
 .sa-chapter-label:first-child { margin-top: 0; }
+
+/* ---------- Vai trò môn học (subject roles) ---------- */
+.badge-subject {
+  display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .02em;
+  background: var(--pen-soft); color: var(--pen);
+  padding: 2px 7px; border-radius: 999px; margin-left: 6px; vertical-align: 1px;
+}
+.subject-role-box {
+  padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--surface-2);
+}
+.subject-role-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.subject-role-chip {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700;
+  background: var(--pen-soft); color: var(--pen); padding: 4px 6px 4px 12px; border-radius: 999px;
+}
+.subject-role-chip button {
+  border: none; background: rgba(0,0,0,.08); color: inherit; width: 18px; height: 18px;
+  border-radius: 50%; cursor: pointer; font-size: 12px; line-height: 1; display: flex; align-items: center; justify-content: center;
+}
+.subject-role-chip button:hover { background: rgba(0,0,0,.18); }
+.subject-role-add { display: flex; gap: 8px; flex-wrap: wrap; }
+.subject-role-add input { flex: 1; min-width: 160px; }
+.cr-subject-grid {
+  display: flex; flex-wrap: wrap; gap: 8px; border: 1.5px solid var(--line); border-radius: var(--radius-sm);
+  padding: 10px 12px; max-height: 220px; overflow-y: auto; background: var(--surface-2);
+}
+.cr-subject-opt {
+  display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text);
+  background: var(--card); border: 1.5px solid var(--line); padding: 5px 10px 5px 8px; border-radius: 999px; cursor: pointer;
+}
+.cr-subject-opt input { width: 15px; height: 15px; accent-color: var(--pen); flex-shrink: 0; }
+.cr-subject-add { display: flex; gap: 8px; margin-top: 10px; }
+.cr-subject-add input { flex: 1; }
