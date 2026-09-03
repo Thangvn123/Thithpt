@@ -5,6 +5,7 @@
 /* ---------- Trạng thái ---------- */
 let USERS = [], EXAMS = [], LESSONS = [], RESULTS = [], PROGRESS = [], NOTICES = [], COMMENTS = [], REPORTS = [], CHAPTER_ORDER = [], CHAPTER_LOCKS = {};
 let CATEGORY_ORDER = {}, UNIT_ORDER = {};
+let SUBJECT_ROLES = []; // danh sách "vai trò môn học" do admin tạo — mỗi tài khoản có thể được cấp nhiều vai trò trong số này
 let PRESENCE = [];
 let QA_QUESTIONS = [], QA_MESSAGES = [];
 let DM_MESSAGES = [];
@@ -92,7 +93,9 @@ async function loadAllTables() {
     CATEGORY_ORDER = (catRow && catRow.value) || {};
     const unitRow = rows.find((r) => r.key === "unit_order");
     UNIT_ORDER = (unitRow && unitRow.value) || {};
-  } catch (err) { CHAPTER_ORDER = []; CHAPTER_LOCKS = {}; CATEGORY_ORDER = {}; UNIT_ORDER = {}; console.warn("Chưa có bảng settings (chạy SQL bổ sung để lưu thứ tự/khoá chương):", err.message); }
+    const subjRolesRow = rows.find((r) => r.key === "subject_roles");
+    SUBJECT_ROLES = (subjRolesRow && subjRolesRow.value) || [];
+  } catch (err) { CHAPTER_ORDER = []; CHAPTER_LOCKS = {}; CATEGORY_ORDER = {}; UNIT_ORDER = {}; SUBJECT_ROLES = []; console.warn("Chưa có bảng settings (chạy SQL bổ sung để lưu thứ tự/khoá chương):", err.message); }
 
   // Tạo admin mặc định nếu hệ thống chưa có
   if (!USERS.some((x) => x.role === "admin")) {
@@ -146,6 +149,8 @@ async function sync(...tables) {
         CATEGORY_ORDER = (catRow && catRow.value) || {};
         const unitRow = rows.find((r) => r.key === "unit_order");
         UNIT_ORDER = (unitRow && unitRow.value) || {};
+        const subjRolesRow = rows.find((r) => r.key === "subject_roles");
+        SUBJECT_ROLES = (subjRolesRow && subjRolesRow.value) || [];
       }
     } catch (e) { console.error(e); }
   }
@@ -1488,7 +1493,13 @@ function renderStudentAccess(main, username) {
     lessons: new Set(stu.allowed_lessons || []),
   };
 
-  const tree = buildChapterTree(LESSONS);
+  // Nếu tài khoản đã được cấp vai trò môn học, giới hạn này chỉ áp dụng
+  // TRONG PHẠM VI các môn đó — nên danh sách chọn bên dưới cũng chỉ hiện đúng phạm vi ấy.
+  const allowedSubjects = getAllowedSubjectsFor(stu);
+  const scopedExams = allowedSubjects ? EXAMS.filter((e) => allowedSubjects.has(normSubj(e.subject))) : EXAMS;
+  const scopedLessons = allowedSubjects ? LESSONS.filter((l) => allowedSubjects.has(normSubj(l.subject))) : LESSONS;
+
+  const tree = buildChapterTree(scopedLessons);
   const chapterKeys = orderChapterKeys(tree);
 
   main.innerHTML = `
@@ -1497,10 +1508,11 @@ function renderStudentAccess(main, username) {
       <div class="card">
         <p class="eyebrow">GIỚI HẠN QUYỀN XEM</p>
         <h2 class="page-title" style="font-size:20px;margin:4px 0 14px">${esc(stu.name)} <span style="font-weight:400;color:var(--pencil);font-size:14px">(${esc(stu.username)})</span></h2>
+        ${(stu.subject_roles || []).length ? `<p class="restricted-note">🎓 Tài khoản này đang có vai trò môn học: <b>${(stu.subject_roles || []).map(esc).join(", ")}</b> — nên danh sách bên dưới chỉ gồm đề/bài giảng thuộc (các) môn này. Để đổi phạm vi môn, vào <b>Đổi vai trò</b>.</p>` : ""}
 
         <label class="shuffle-check" style="margin-bottom:18px">
           <input type="checkbox" id="sa-restricted" ${state.restricted ? "checked" : ""} />
-          🔒 Bật giới hạn quyền xem cho tài khoản này <span style="font-weight:400;color:var(--pencil)">(nếu tắt, tài khoản này xem được toàn bộ như bình thường)</span>
+          🔒 Bật giới hạn quyền xem cho tài khoản này <span style="font-weight:400;color:var(--pencil)">(nếu tắt, tài khoản này xem được toàn bộ trong phạm vi môn đã cấp ở trên)</span>
         </label>
 
         <div id="sa-body" class="${state.restricted ? "" : "hidden"}">
@@ -1510,7 +1522,7 @@ function renderStudentAccess(main, username) {
               <span><button class="btn btn-ghost btn-sm" id="sa-exam-all">Chọn hết</button><button class="btn btn-ghost btn-sm" id="sa-exam-none">Bỏ hết</button></span>
             </div>
             <div class="sa-options">
-              ${EXAMS.length === 0 ? `<p class="hint">Chưa có đề thi nào.</p>` : EXAMS.map((e) => `
+              ${scopedExams.length === 0 ? `<p class="hint">Không có đề thi nào trong phạm vi.</p>` : scopedExams.map((e) => `
                 <label class="sa-opt">
                   <input type="checkbox" data-sa-exam="${e.id}" ${state.exams.has(e.id) ? "checked" : ""} />
                   ${esc(e.title)} <span style="color:var(--pencil)">· ${esc(e.subject)}</span>
@@ -1524,7 +1536,7 @@ function renderStudentAccess(main, username) {
               <span><button class="btn btn-ghost btn-sm" id="sa-lesson-all">Chọn hết</button><button class="btn btn-ghost btn-sm" id="sa-lesson-none">Bỏ hết</button></span>
             </div>
             <div class="sa-options">
-              ${chapterKeys.length === 0 ? `<p class="hint">Chưa có bài giảng nào.</p>` : chapterKeys.map((ch) => `
+              ${chapterKeys.length === 0 ? `<p class="hint">Không có bài giảng nào trong phạm vi.</p>` : chapterKeys.map((ch) => `
                 <p class="sa-chapter-label">📁 ${esc(ch)}</p>
                 ${Object.values(tree[ch]).flat().sort((a, b) => naturalVi(a.title, b.title)).map((l) => `
                   <label class="sa-opt sa-opt-indent">
@@ -2262,19 +2274,73 @@ function buildChapterTree(lessonsArr) {
   return tree;
 }
 
+/* ---------- Vai trò môn học (subject roles) ----------
+   Admin tạo ra các "vai trò môn học" (vd: Toán, Lý, Hoá…) và cấp cho
+   từng tài khoản học sinh — 1 học sinh có thể được cấp NHIỀU vai trò.
+   Học sinh chỉ thấy đề thi/bài giảng thuộc đúng những môn mình có vai trò.
+   Nếu tài khoản chưa được cấp vai trò môn học nào (subject_roles rỗng/chưa set)
+   → không bị giới hạn theo môn, xem được tất cả như trước (tương thích ngược). */
+function normSubj(s) { return String(s || "").trim().toLowerCase(); }
+
+/* Tất cả tên môn đang xuất hiện trong đề thi + bài giảng, dùng để gợi ý khi tạo vai trò */
+function getContentSubjects() {
+  const set = new Set();
+  for (const e of EXAMS) if (e.subject) set.add(e.subject);
+  for (const l of LESSONS) if (l.subject) set.add(l.subject);
+  return [...set].sort(naturalVi);
+}
+
+/* Lưu lại danh sách vai trò môn học (bảng settings, key "subject_roles") */
+async function saveSubjectRolesRegistry(newList) {
+  const cleaned = [...new Set(newList.map((s) => String(s || "").trim()).filter(Boolean))].sort(naturalVi);
+  try { await DBX.remove("settings", "key", "subject_roles"); } catch (e0) { /* chưa có dòng cũ, bỏ qua */ }
+  await DBX.insert("settings", { key: "subject_roles", value: cleaned, updated_at: Date.now() });
+  SUBJECT_ROLES = cleaned;
+  return cleaned;
+}
+
+/* Thêm 1 vai trò môn học mới vào danh mục chung (nếu chưa có) */
+async function ensureSubjectRoleExists(name) {
+  const n = String(name || "").trim();
+  if (!n) return SUBJECT_ROLES;
+  if (SUBJECT_ROLES.some((s) => normSubj(s) === normSubj(n))) return SUBJECT_ROLES;
+  return saveSubjectRolesRegistry([...SUBJECT_ROLES, n]);
+}
+
+/* Các môn mà 1 tài khoản được phép xem theo vai trò môn học của họ.
+   Trả về null nếu tài khoản không bị giới hạn theo môn (xem được tất cả). */
+function getAllowedSubjectsFor(u) {
+  if (!u || u.role === "admin") return null;
+  if (!u.subject_roles || !u.subject_roles.length) return null;
+  return new Set(u.subject_roles.map(normSubj));
+}
+
 /* ---------- Giới hạn quyền xem theo từng tài khoản ----------
-   Mặc định (restricted=false hoặc chưa set): xem toàn bộ như cũ.
-   Khi admin bật restricted=true cho 1 tài khoản, họ CHỈ thấy đúng
-   những đề/bài giảng nằm trong allowed_exams / allowed_lessons. */
+   Mặc định (restricted=false hoặc chưa set): xem toàn bộ theo phạm vi môn (nếu có).
+   Khi admin bật restricted=true cho 1 tài khoản, quyền xem sẽ CHỈ còn đúng
+   những đề/bài giảng nằm trong allowed_exams / allowed_lessons — nhưng giới hạn
+   này luôn nằm TRONG phạm vi các môn mà tài khoản đã được cấp vai trò (nếu có). */
 function getVisibleExamsFor(u) {
-  if (!u || u.role === "admin" || !u.restricted) return EXAMS;
-  const allowed = new Set(u.allowed_exams || []);
-  return EXAMS.filter((e) => allowed.has(e.id));
+  if (!u || u.role === "admin") return EXAMS;
+  let list = EXAMS;
+  const allowedSubjects = getAllowedSubjectsFor(u);
+  if (allowedSubjects) list = list.filter((e) => allowedSubjects.has(normSubj(e.subject)));
+  if (u.restricted) {
+    const allowed = new Set(u.allowed_exams || []);
+    list = list.filter((e) => allowed.has(e.id));
+  }
+  return list;
 }
 function getVisibleLessonsFor(u) {
-  if (!u || u.role === "admin" || !u.restricted) return LESSONS;
-  const allowed = new Set(u.allowed_lessons || []);
-  return LESSONS.filter((l) => allowed.has(l.id));
+  if (!u || u.role === "admin") return LESSONS;
+  let list = LESSONS;
+  const allowedSubjects = getAllowedSubjectsFor(u);
+  if (allowedSubjects) list = list.filter((l) => allowedSubjects.has(normSubj(l.subject)));
+  if (u.restricted) {
+    const allowed = new Set(u.allowed_lessons || []);
+    list = list.filter((l) => allowed.has(l.id));
+  }
+  return list;
 }
 function getVisibleExams() { return getVisibleExamsFor(CURRENT_USER); }
 function getVisibleLessons() { return getVisibleLessonsFor(CURRENT_USER); }
@@ -3097,7 +3163,63 @@ async function renderAdminAsync(main, tab) {
         <p id="nu-err" class="error-box hidden"></p>
         <button class="btn btn-primary btn-sm" id="nu-create">Tạo tài khoản</button>
       </div>
+      <div class="subject-role-box">
+        <p style="font-weight:800;color:var(--ink);margin-bottom:2px">🎓 Vai trò môn học</p>
+        <p class="hint" style="margin-bottom:8px">Tạo vai trò cho từng môn rồi cấp cho học sinh (mục "Đổi vai trò" bên dưới) — học sinh có vai trò môn nào sẽ chỉ thấy đề thi/bài giảng của (các) môn đó. Có thể cấp nhiều vai trò cho 1 học sinh.</p>
+        <div class="subject-role-list" id="sr-list">
+          ${SUBJECT_ROLES.length === 0 ? `<span class="hint">Chưa có vai trò môn học nào.</span>` : SUBJECT_ROLES.map((s) => `
+            <span class="subject-role-chip">${esc(s)}<button type="button" data-sr-del="${esc(s)}" title="Xoá vai trò">✕</button></span>`).join("")}
+        </div>
+        <div class="subject-role-add">
+          <input id="sr-new" placeholder="vd: Toán, Vật lý, Hoá học…" list="sr-suggest" />
+          <datalist id="sr-suggest">${getContentSubjects().map((s) => `<option value="${esc(s)}"></option>`).join("")}</datalist>
+          <button class="btn btn-outline btn-sm" id="sr-add">+ Tạo vai trò môn học</button>
+        </div>
+        <p id="sr-err" class="error-box hidden" style="margin-top:8px"></p>
+      </div>
       <div id="users-list"></div>`;
+
+    $("#sr-add").addEventListener("click", async () => {
+      const val = $("#sr-new").value.trim();
+      const err = $("#sr-err");
+      err.classList.add("hidden");
+      if (!val) return;
+      if (SUBJECT_ROLES.some((s) => normSubj(s) === normSubj(val))) {
+        err.textContent = "Vai trò môn học này đã tồn tại.";
+        err.classList.remove("hidden");
+        return;
+      }
+      const btn = $("#sr-add");
+      btn.disabled = true; btn.textContent = "Đang lưu…";
+      try {
+        await saveSubjectRolesRegistry([...SUBJECT_ROLES, val]);
+        toast(`Đã tạo vai trò môn học "${val}"`);
+        renderAdmin(main, "users");
+      } catch (e) {
+        btn.disabled = false; btn.textContent = "+ Tạo vai trò môn học";
+        err.textContent = "Không lưu được: " + e.message + " — kiểm tra đã tạo bảng settings chưa";
+        err.classList.remove("hidden");
+      }
+    });
+    $$("[data-sr-del]").forEach((b) => b.addEventListener("click", () => {
+      const name = b.dataset.srDel;
+      confirmModal("Xoá vai trò môn học?", `Vai trò "${name}" sẽ bị gỡ khỏi mọi tài khoản đang được cấp.`, async () => {
+        try {
+          await saveSubjectRolesRegistry(SUBJECT_ROLES.filter((s) => s !== name));
+          // Gỡ vai trò này khỏi mọi tài khoản đang giữ nó
+          const affected = USERS.filter((u) => (u.subject_roles || []).some((s) => normSubj(s) === normSubj(name)));
+          for (const u of affected) {
+            const updated = { ...u, subject_roles: (u.subject_roles || []).filter((s) => normSubj(s) !== normSubj(name)) };
+            await DBX.remove("users", "username", u.username);
+            await DBX.insert("users", updated);
+            const idx = USERS.findIndex((x) => x.username === u.username);
+            if (idx > -1) USERS[idx] = updated;
+          }
+          toast(`Đã xoá vai trò môn học "${name}"`);
+        } catch (e) { toast("Lỗi xoá: " + e.message, true); }
+        renderAdmin(main, "users");
+      });
+    }));
 
     $("#nu-create").addEventListener("click", async () => {
       const errEl = $("#nu-err");
@@ -3137,7 +3259,7 @@ async function renderAdminAsync(main, tab) {
     });
 
     $("#users-list").innerHTML = USERS.map((u) => row(
-      `${esc(u.name)} <span style="font-family:var(--font-mono);font-weight:400;color:var(--pencil)">(${esc(u.username)})</span>${u.role === "admin" ? '<span class="badge-admin">ADMIN</span>' : u.role === "solver" ? '<span class="badge-solver">GIẢI BÀI</span>' : ""}${u.restricted ? '<span class="badge-restricted">🔒 GIỚI HẠN</span>' : ""}`,
+      `${esc(u.name)} <span style="font-family:var(--font-mono);font-weight:400;color:var(--pencil)">(${esc(u.username)})</span>${u.role === "admin" ? '<span class="badge-admin">ADMIN</span>' : u.role === "solver" ? '<span class="badge-solver">GIẢI BÀI</span>' : ""}${u.restricted ? '<span class="badge-restricted">🔒 GIỚI HẠN</span>' : ""}${(u.subject_roles || []).map((s) => `<span class="badge-subject">📘 ${esc(s)}</span>`).join("")}`,
       `${u.email ? u.email + " · " : ""}${RESULTS.filter((r) => r.username === u.username).length} lượt thi`,
       u.role !== "admin" ? `<span style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end"><button class="btn btn-outline btn-sm" data-change-role="${esc(u.username)}">🎓 Đổi vai trò</button><button class="btn btn-outline btn-sm" data-manage-access="${esc(u.username)}">🔒 Giới hạn</button><button class="btn btn-danger btn-sm" data-del-user="${esc(u.username)}">Xoá</button></span>` : "",
       avatarHtml(u.username, u.name, 34)
@@ -3431,18 +3553,40 @@ function renderProfile(main) {
 function openChangeRoleModal(username, main) {
   const u = USERS.find((x) => x.username === username);
   if (!u) return;
+  // Danh sách vai trò môn học cục bộ trong modal — có thể thêm mới ngay tại đây, sẽ lưu vào danh mục chung khi bấm Lưu
+  let localSubjectRoles = [...SUBJECT_ROLES];
+  const checkedSubjects = new Set((u.subject_roles || []).map(normSubj));
+
+  const renderSubjectGrid = () => `
+    ${localSubjectRoles.length === 0 ? `<p class="hint">Chưa có vai trò môn học nào — tạo mới bên dưới.</p>` : `
+      <div class="cr-subject-grid" id="cr-subject-grid">
+        ${localSubjectRoles.map((s) => `
+          <label class="cr-subject-opt">
+            <input type="checkbox" data-cr-subject="${esc(s)}" ${checkedSubjects.has(normSubj(s)) ? "checked" : ""} />
+            📘 ${esc(s)}
+          </label>`).join("")}
+      </div>`}`;
+
   $("#modal-root").innerHTML = `
     <div class="modal-overlay" id="cr-overlay">
       <div class="modal">
         <h3>🎓 Đổi vai trò</h3>
         <p>Tài khoản: <b>${esc(u.name)}</b> (${esc(u.username)})</p>
         <div class="field">
-          <label>Vai trò mới</label>
+          <label>Vai trò hệ thống</label>
           <select id="cr-role" class="select" style="width:100%">
             <option value="user" ${u.role === "user" || !u.role ? "selected" : ""}>Học sinh</option>
             <option value="solver" ${u.role === "solver" ? "selected" : ""}>Người giải bài</option>
             <option value="admin" ${u.role === "admin" ? "selected" : ""}>Quản trị viên</option>
           </select>
+        </div>
+        <div class="field">
+          <label>Vai trò môn học được xem <span style="font-weight:400;color:var(--pencil)">(có thể chọn nhiều môn — để trống nghĩa là xem được tất cả các môn)</span></label>
+          <div id="cr-subject-wrap">${renderSubjectGrid()}</div>
+          <div class="cr-subject-add">
+            <input id="cr-subject-new" placeholder="+ Tạo vai trò môn học mới, vd: Toán" />
+            <button class="btn btn-outline btn-sm" id="cr-subject-add-btn" type="button">Thêm</button>
+          </div>
         </div>
         <p id="cr-err" class="error-box hidden"></p>
         <div class="modal-actions">
@@ -3453,18 +3597,38 @@ function openChangeRoleModal(username, main) {
     </div>`;
   $("#cr-overlay").addEventListener("click", (e) => { if (e.target.id === "cr-overlay") $("#modal-root").innerHTML = ""; });
   $("#cr-cancel").addEventListener("click", () => { $("#modal-root").innerHTML = ""; });
+  $("#cr-subject-add-btn").addEventListener("click", () => {
+    const val = $("#cr-subject-new").value.trim();
+    if (!val) return;
+    if (!localSubjectRoles.some((s) => normSubj(s) === normSubj(val))) localSubjectRoles.push(val);
+    checkedSubjects.add(normSubj(val));
+    $("#cr-subject-new").value = "";
+    $("#cr-subject-wrap").innerHTML = renderSubjectGrid();
+  });
   $("#cr-save").addEventListener("click", async () => {
     const newRole = $("#cr-role").value;
     const btn = $("#cr-save");
     btn.disabled = true; btn.textContent = "Đang lưu…";
-    const updated = { ...u, role: newRole };
+    const selectedSubjects = $$("[data-cr-subject]").filter((cb) => cb.checked).map((cb) => cb.dataset.crSubject);
+    const updated = { ...u, role: newRole, subject_roles: selectedSubjects };
     try {
+      // Lưu các vai trò môn học mới tạo (nếu có) vào danh mục chung trước
+      const newOnes = localSubjectRoles.filter((s) => !SUBJECT_ROLES.some((r) => normSubj(r) === normSubj(s)));
+      if (newOnes.length) await saveSubjectRolesRegistry([...SUBJECT_ROLES, ...newOnes]);
       await DBX.remove("users", "username", username);
-      await DBX.insert("users", updated);
+      try { await DBX.insert("users", updated); }
+      catch (e1) {
+        // CSDL chưa có cột subject_roles → thử lại không kèm trường mới
+        const fb = { ...updated };
+        delete fb.subject_roles;
+        await DBX.insert("users", fb);
+        throw new Error("CSDL chưa có cột lưu vai trò môn học (subject_roles) — hãy bổ sung cột này rồi thử lại.");
+      }
       const idx = USERS.findIndex((x) => x.username === username);
       if (idx > -1) USERS[idx] = updated;
+      if (CURRENT_USER.username === username) CURRENT_USER = updated;
       $("#modal-root").innerHTML = "";
-      toast(`Đã đổi vai trò của "${u.name}" thành ${newRole === "admin" ? "Quản trị viên" : newRole === "solver" ? "Người giải bài" : "Học sinh"}`);
+      toast(`Đã cập nhật vai trò của "${u.name}"`);
       renderAdmin(main, "users");
     } catch (e) {
       btn.disabled = false; btn.textContent = "Lưu";
