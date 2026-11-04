@@ -29,6 +29,9 @@ function typesetMath(el) {
   }
 }
 
+/* Danh sách bài giảng KHÔNG tải cột video_data (video base64 rất nặng) — chỉ tải khi mở bài */
+const LESSON_LITE_COLS = "id,title,subject,category,chapter,lesson,description,video_type,video_url,thumb,docs,uploader,created_at";
+
 /* ---------- Khởi động ---------- */
 init();
 async function init() {
@@ -61,7 +64,7 @@ async function init() {
 
 async function loadAllTables() {
   const [u, e, l, r] = await Promise.all([
-    DBX.list("users"), DBX.list("exams"), DBX.list("lessons"), DBX.list("results"),
+    DBX.list("users"), DBX.list("exams"), DBX.list("lessons", undefined, LESSON_LITE_COLS), DBX.list("results"),
   ]);
   USERS = u;
   EXAMS = e.map(rowToExam);
@@ -99,7 +102,7 @@ async function loadAllTables() {
 
   // Tạo admin mặc định nếu hệ thống chưa có
   if (!USERS.some((x) => x.role === "admin")) {
-    const admin = { username: "admin", password: "admin123", name: "Quản trị viên", role: "admin" };
+    const admin = { username: "admin", password: await PW.hash("admin123"), name: "Quản trị viên", role: "admin" };
     USERS.push(admin);
     try { await DBX.insert("users", admin); } catch (err) { console.error(err); }
   }
@@ -127,7 +130,7 @@ async function sync(...tables) {
   if (!DBX.remote) return;
   for (const t of tables) {
     try {
-      const rows = await DBX.list(t, t === "presence" ? "last_active" : undefined);
+      const rows = await DBX.list(t, t === "presence" ? "last_active" : undefined, t === "lessons" ? LESSON_LITE_COLS : undefined);
       if (t === "users") USERS = rows;
       else if (t === "exams") EXAMS = rows.map(rowToExam);
       else if (t === "lessons") LESSONS = rows.map(rowToLesson);
@@ -163,7 +166,7 @@ async function sync(...tables) {
 /* Hiện màn hình chờ rồi đồng bộ (chỉ ở chế độ SQL) */
 async function syncView(main, tables) {
   if (!DBX.remote) return;
-  main.innerHTML = '<div class="loading"><div class="spinner"></div>Đang đồng bộ dữ liệu…</div>';
+  main.innerHTML = '<div class="loading"><div class="spinner"></div>Đang đồng bộ dữ liệu…</div><div class="grid grid-3" style="margin-top:18px"><div class="skeleton" style="height:150px"></div><div class="skeleton" style="height:150px"></div><div class="skeleton" style="height:150px"></div></div>';
   await sync(...tables);
 }
 
@@ -176,7 +179,7 @@ function examToRow(e) {
   return { id: e.id, title: e.title, subject: e.subject, duration: e.duration, data: { p1: e.p1, p2: e.p2, p3: e.p3, sourceFile: e.sourceFile || null, shuffle: !!e.shuffle }, uploader: e.uploader, created_at: e.createdAt };
 }
 function rowToLesson(r) {
-  return { id: r.id, title: r.title, subject: r.subject, category: r.category, chapter: r.chapter, lesson: r.lesson, description: r.description, videoType: r.video_type, videoUrl: r.video_url, videoData: r.video_data, thumb: r.thumb || null, docs: r.docs || [], uploader: r.uploader, createdAt: +r.created_at || Date.now() };
+  return { id: r.id, title: r.title, subject: r.subject, category: r.category, chapter: r.chapter, lesson: r.lesson, description: r.description, videoType: r.video_type, videoUrl: r.video_url, videoData: r.video_data, _lite: DBX.remote && r.video_data === undefined, thumb: r.thumb || null, docs: r.docs || [], uploader: r.uploader, createdAt: +r.created_at || Date.now() };
 }
 function lessonToRow(l) {
   return { id: l.id, title: l.title, subject: l.subject, category: l.category, chapter: l.chapter, lesson: l.lesson, description: l.description, video_type: l.videoType, video_url: l.videoUrl, video_data: l.videoData, thumb: l.thumb || null, docs: l.docs, uploader: l.uploader, created_at: l.createdAt };
@@ -430,8 +433,10 @@ function setupAuth() {
         showAuthError("Không tìm thấy tài khoản này. Liên hệ quản trị viên để được cấp tài khoản.");
       } else if (row.password !== "supabase-auth") {
         /* Tài khoản kiểu cũ / do admin tạo trực tiếp */
-        if (row.password === pw) login(row);
-        else showAuthError("Sai mật khẩu.");
+        if (await PW.verify(row.password, pw)) {
+          if (!PW.isHashed(row.password) && PW.ok) row.password = await PW.hash(pw); // tự nâng cấp mật khẩu cũ lên bản băm
+          login(row);
+        } else showAuthError("Sai mật khẩu.");
       } else {
         /* Tài khoản email-xác-minh (tạo từ trước khi tắt đăng ký công khai) */
         try {
@@ -453,6 +458,15 @@ function setupAuth() {
   };
   $("#auth-submit").addEventListener("click", submit);
   $("#auth-password").addEventListener("keydown", (e) => e.key === "Enter" && submit());
+  $("#auth-username").addEventListener("keydown", (e) => e.key === "Enter" && $("#auth-password").focus());
+  // Nút hiện / ẩn mật khẩu
+  $("#pw-toggle").addEventListener("click", () => {
+    const pw = $("#auth-password");
+    const show = pw.type === "password";
+    pw.type = show ? "text" : "password";
+    $("#pw-toggle").textContent = show ? "🙈" : "👁";
+    $("#pw-toggle").setAttribute("aria-label", show ? "Ẩn mật khẩu" : "Hiện mật khẩu");
+  });
 }
 function showAuthError(msg) { const el = $("#auth-error"); el.textContent = msg; el.classList.remove("hidden"); }
 function hideAuthError() {
@@ -471,6 +485,7 @@ function login(u, restore) {
   if (!localStorage.getItem(seenKey())) markSeen(); // lần đầu đăng nhập trên máy: không dồn thông báo cũ
   updateNotifBadge();
   updateDmBadge();
+  updateDrawerStat();
   go("exams");
   startSessionWatch();
 
@@ -573,6 +588,7 @@ function updateDrawerStat() {
 }
 function setupNav() {
   $$("#main-nav .side-nav-btn").forEach((b) => b.addEventListener("click", () => { go(b.dataset.view); closeDrawer(); }));
+  $$("#bottom-nav .bn-btn").forEach((b) => b.addEventListener("click", () => go(b.dataset.view)));
   $("#brand-home").addEventListener("click", () => { go("exams"); closeDrawer(); });
   $("#hamburger-btn").addEventListener("click", openDrawer);
   $("#drawer-close").addEventListener("click", closeDrawer);
@@ -590,7 +606,8 @@ function go(view, payload) {
   if (VIEW === "taking" && view !== "taking" && view !== "result") stopTimer();
   if (VIEW === "exams" && view !== "exams" && COUNTDOWN_TIMER) { clearInterval(COUNTDOWN_TIMER); COUNTDOWN_TIMER = null; }
   VIEW = view;
-  $$("#main-nav .side-nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  $$("#main-nav .side-nav-btn, #bottom-nav .bn-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  document.body.classList.toggle("in-exam", view === "taking");
   const titleEl = $("#topbar-title");
   if (titleEl) titleEl.textContent = VIEW_LABELS[view] || "EXAMO";
   const main = $("#main");
@@ -3245,7 +3262,7 @@ async function renderAdminAsync(main, tab) {
       }
       const btn = $("#nu-create");
       btn.disabled = true; btn.textContent = "Đang tạo…";
-      const u = { username, password, name, role };
+      const u = { username, password: await PW.hash(password), name, role };
       try {
         await DBX.insert("users", u);
         USERS.push(u);
@@ -4786,8 +4803,7 @@ function renderEditLesson(main, lessonId) {
     const btn = $("#el-save");
     btn.disabled = true; btn.textContent = "Đang lưu…";
     try {
-      await DBX.remove("lessons", "id", ls.id);
-      await DBX.insert("lessons", lessonToRow(updated));
+      await DBX.upsert("lessons", lessonToRow(updated), "id"); // ghi đè an toàn, không có khoảng hở xoá-rồi-ghi
       const idx = LESSONS.findIndex((l) => l.id === ls.id);
       if (idx > -1) LESSONS[idx] = updated;
       toast('Đã cập nhật bài giảng "' + title + '"');
@@ -4848,12 +4864,13 @@ function renderChangePassword(main) {
         catch (e) { throw new Error("Mật khẩu hiện tại không đúng."); }
         await AUTH.updatePassword(res.access_token, pw1);
       } else {
-        if (CURRENT_USER.password !== cur) throw new Error("Mật khẩu hiện tại không đúng.");
-        const updated = { ...CURRENT_USER, password: pw1 };
+        if (!(await PW.verify(CURRENT_USER.password, cur))) throw new Error("Mật khẩu hiện tại không đúng.");
+        const newHash = await PW.hash(pw1);
+        const updated = { ...CURRENT_USER, password: newHash };
         await DBX.remove("users", "username", CURRENT_USER.username);
         try { await DBX.insert("users", updated); }
         catch (e1) { const fb = { ...updated }; delete fb.session; await DBX.insert("users", fb); }
-        CURRENT_USER.password = pw1;
+        CURRENT_USER.password = newHash;
         const idx = USERS.findIndex((u) => u.username === CURRENT_USER.username);
         if (idx > -1) USERS[idx] = updated;
       }

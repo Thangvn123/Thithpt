@@ -28,7 +28,7 @@ const DBX = {
     }
   },
 
-  async list(table, orderCol) {
+  async list(table, orderCol, cols) {
     if (!this.remote) return LocalDB.list(table);
     const order = orderCol || "created_at";
     const pageSize = 1000; // PostgREST (Supabase) chỉ trả tối đa 1000 dòng/lần mặc định — phải phân trang mới lấy hết
@@ -36,7 +36,7 @@ const DBX = {
     let from = 0;
     while (true) {
       const to = from + pageSize - 1;
-      const res = await fetch(this.base + table + "?select=*&order=" + order + ".asc", {
+      const res = await fetch(this.base + table + "?select=" + (cols || "*") + "&order=" + order + ".asc", {
         headers: { ...this.headers, Range: from + "-" + to },
       });
       if (!res.ok && res.status !== 206) throw new Error("SQL: không đọc được bảng " + table + " (HTTP " + res.status + ")");
@@ -195,5 +195,33 @@ const AUTH = {
     const j = await r.json();
     if (!r.ok) throw new Error(j.msg || j.error_description || j.message || "Đổi mật khẩu thất bại");
     return j;
+  },
+};
+
+/* =====================================================
+   PW — Băm mật khẩu (SHA-256 + muối ngẫu nhiên)
+   • Mật khẩu mới luôn được băm trước khi lưu
+   • Tài khoản cũ (lưu chữ thường) vẫn đăng nhập được và
+     TỰ ĐỘNG được nâng cấp lên bản băm ở lần đăng nhập kế tiếp
+   Lưu ý: băm phía trình duyệt chỉ giảm rủi ro lộ mật khẩu gốc,
+   KHÔNG thay thế Supabase Auth + Row Level Security.
+===================================================== */
+const PW = {
+  ok: !!(window.crypto && crypto.subtle),
+  async _sha(text) {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  },
+  async hash(plain) {
+    if (!this.ok) return plain; // trình duyệt không hỗ trợ (cần HTTPS) → giữ nguyên
+    const salt = Array.from(crypto.getRandomValues(new Uint8Array(12))).map((b) => b.toString(16).padStart(2, "0")).join("");
+    return "sha256$" + salt + "$" + (await this._sha(salt + plain));
+  },
+  isHashed(stored) { return typeof stored === "string" && stored.startsWith("sha256$"); },
+  async verify(stored, plain) {
+    if (!this.isHashed(stored)) return stored === plain;
+    if (!this.ok) return false;
+    const [, salt, h] = stored.split("$");
+    return (await this._sha(salt + plain)) === h;
   },
 };
