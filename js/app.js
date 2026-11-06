@@ -88,6 +88,7 @@ async function loadAllTables() {
   catch (err) { DM_MESSAGES = []; console.warn("Chưa có bảng dm_messages (chạy SQL bổ sung để bật Nhắn tin riêng):", err.message); }
   try {
     const rows = await DBX.list("settings");
+    if (window.StudyLock) StudyLock.parse(rows);
     const orderRow = rows.find((r) => r.key === "chapter_order");
     CHAPTER_ORDER = (orderRow && orderRow.value) || [];
     const lockRow = rows.find((r) => r.key === "chapter_locks");
@@ -144,6 +145,7 @@ async function sync(...tables) {
       else if (t === "presence") PRESENCE = rows;
       else if (t === "dm_messages") DM_MESSAGES = rows;
       else if (t === "settings") {
+        if (window.StudyLock) StudyLock.parse(rows);
         const orderRow = rows.find((r) => r.key === "chapter_order");
         CHAPTER_ORDER = (orderRow && orderRow.value) || [];
         const lockRow = rows.find((r) => r.key === "chapter_locks");
@@ -487,6 +489,7 @@ function login(u, restore) {
   updateDmBadge();
   updateDrawerStat();
   go("exams");
+  if (window.StudyLock) StudyLock.onLogin();
   startSessionWatch();
 
   if (!restore) {
@@ -516,6 +519,7 @@ function showAuth() {
     DBX.remove("presence", "username", CURRENT_USER.username).catch(() => {});
   }
   CURRENT_USER = null;
+  if (window.StudyLock) StudyLock.clear();
   stopTimer();
   clearInterval(SESS_TIMER);
   localStorage.removeItem("ptt_login");
@@ -1686,7 +1690,10 @@ const LESSON_CATEGORIES = [
   "Ôn tập tổng hợp",
 ];
 
-function renderLessons(main, filter) { renderLessonsAsync(main, filter); }
+function renderLessons(main, filter) {
+  if (window.StudyLock && StudyLock.guard(main)) return; // bị chặn do lâu không học
+  renderLessonsAsync(main, filter);
+}
 async function renderLessonsAsync(main, filter) {
   if (filter === undefined) {
     await syncView(main, ["lessons", "progress"]);
@@ -2435,6 +2442,7 @@ function renderCategoryUnits(list, lessonCard, foldPrefix, ch, cat) {
 }
 
 function renderLessonDetail(main, id) {
+  if (window.StudyLock && StudyLock.guard(main)) return; // bị chặn do lâu không học
   const ls = LESSONS.find((l) => l.id === id);
   if (!ls) return go("lessons");
   if (!getVisibleLessons().some((l) => l.id === id)) return go("lessons");
@@ -3276,11 +3284,16 @@ async function renderAdminAsync(main, tab) {
     });
 
     $("#users-list").innerHTML = USERS.map((u) => row(
-      `${esc(u.name)} <span style="font-family:var(--font-mono);font-weight:400;color:var(--pencil)">(${esc(u.username)})</span>${u.role === "admin" ? '<span class="badge-admin">ADMIN</span>' : u.role === "solver" ? '<span class="badge-solver">GIẢI BÀI</span>' : ""}${u.restricted ? '<span class="badge-restricted">🔒 GIỚI HẠN</span>' : ""}${(u.subject_roles || []).map((s) => `<span class="badge-subject">📘 ${esc(s)}</span>`).join("")}`,
-      `${u.email ? u.email + " · " : ""}${RESULTS.filter((r) => r.username === u.username).length} lượt thi`,
-      u.role !== "admin" ? `<span style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end"><button class="btn btn-outline btn-sm" data-change-role="${esc(u.username)}">🎓 Đổi vai trò</button><button class="btn btn-outline btn-sm" data-manage-access="${esc(u.username)}">🔒 Giới hạn</button><button class="btn btn-danger btn-sm" data-del-user="${esc(u.username)}">Xoá</button></span>` : "",
+      `${esc(u.name)} <span style="font-family:var(--font-mono);font-weight:400;color:var(--pencil)">(${esc(u.username)})</span>${u.role === "admin" ? '<span class="badge-admin">ADMIN</span>' : u.role === "solver" ? '<span class="badge-solver">GIẢI BÀI</span>' : ""}${u.restricted ? '<span class="badge-restricted">🔒 GIỚI HẠN</span>' : ""}${window.StudyLock ? StudyLock.badge(u) : ""}${(u.subject_roles || []).map((s) => `<span class="badge-subject">📘 ${esc(s)}</span>`).join("")}`,
+      `${u.email ? u.email + " · " : ""}${RESULTS.filter((r) => r.username === u.username).length} lượt thi${window.StudyLock ? StudyLock.lastText(u) : ""}`,
+      u.role !== "admin" ? `<span style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">${window.StudyLock ? StudyLock.btn(u) : ""}<button class="btn btn-outline btn-sm" data-change-role="${esc(u.username)}">🎓 Đổi vai trò</button><button class="btn btn-outline btn-sm" data-manage-access="${esc(u.username)}">🔒 Giới hạn</button><button class="btn btn-danger btn-sm" data-del-user="${esc(u.username)}">Xoá</button></span>` : "",
       avatarHtml(u.username, u.name, 34)
     )).join("");
+    if (window.StudyLock) {
+      $("#users-list").insertAdjacentHTML("beforebegin", StudyLock.panelHtml());
+      StudyLock.bindPanel(() => renderAdmin(main, "users"));
+      $$("[data-sl-toggle]").forEach((b) => b.addEventListener("click", () => StudyLock.toggle(b.dataset.slToggle, () => renderAdmin(main, "users"))));
+    }
     $$("[data-change-role]").forEach((b) => b.addEventListener("click", () => openChangeRoleModal(b.dataset.changeRole, main)));
     $$("[data-manage-access]").forEach((b) => b.addEventListener("click", () => go("studentaccess", b.dataset.manageAccess)));
     $$("[data-del-user]").forEach((b) => b.addEventListener("click", () =>
