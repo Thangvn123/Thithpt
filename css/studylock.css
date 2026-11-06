@@ -1,0 +1,26 @@
+/* studylock.css — Thông báo chặn xem bài giảng */
+.sl-overlay {
+  position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: rgba(10, 14, 40, .72); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  animation: slFade .3s ease both;
+}
+@keyframes slFade { from { opacity: 0; } to { opacity: 1; } }
+.sl-box, .sl-page {
+  width: 100%; max-width: 460px; text-align: center; background: var(--card); border-radius: 22px; padding: 34px 28px;
+  border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0, 0, 0, .4);
+  animation: slPop .45s cubic-bezier(.3, 1.4, .4, 1) both;
+}
+.sl-page { margin: 40px auto; box-shadow: var(--shadow); }
+@keyframes slPop { from { opacity: 0; transform: translateY(18px) scale(.94); } to { opacity: 1; transform: none; } }
+.sl-icon { font-size: 54px; line-height: 1; margin-bottom: 14px; animation: slShake 2.6s ease-in-out infinite; transform-origin: 50% 20%; }
+@keyframes slShake { 0%, 80%, 100% { transform: rotate(0); } 84% { transform: rotate(-10deg); } 88% { transform: rotate(9deg); } 92% { transform: rotate(-6deg); } 96% { transform: rotate(3deg); } }
+.sl-title { font-family: var(--font-display); font-size: 22px; color: var(--ink); margin-bottom: 10px; }
+.sl-text { color: var(--pencil); line-height: 1.65; margin-bottom: 10px; }
+.sl-text b { color: var(--ink); }
+.sl-meta { font-size: 12.5px; color: var(--pencil); margin-bottom: 22px; }
+.sl-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.sl-panel { margin-bottom: 16px; padding: 16px 18px; }
+.sl-panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 10px; }
+.sl-panel .card-meta { margin-bottom: 12px; line-height: 2; }
+.sl-switch { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; cursor: pointer; }
+.sl-switch input { width: 18px; height: 18px; accent-color: var(--pen); }
