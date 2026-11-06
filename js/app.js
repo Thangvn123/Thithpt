@@ -197,10 +197,8 @@ function resultToRow(r) {
 /* Ghi lịch sử học: mỗi người + mỗi video là 1 dòng.
    watchedSeconds/durationSeconds (nếu có) dùng để biết học sinh đã xem tới đâu trong video — luôn giữ mốc xa nhất đã đạt được, không bị lùi lại khi tua về đầu. */
 function recordProgress(lessonId, watchedSeconds, durationSeconds) {
-  if (window.StudyLock) StudyLock.noteWatch(lessonId, watchedSeconds); // đo thời gian xem thật cho tính năng chặn
   const id = CURRENT_USER.username + "__" + lessonId;
   const prev = PROGRESS.find((p) => p.id === id);
-  if (!watchedSeconds && prev) return; // chỉ mở trang: không ghi đè mốc thời gian của lần xem trước
   const row = {
     id, username: CURRENT_USER.username, lesson_id: lessonId,
     created_at: Date.now(),
